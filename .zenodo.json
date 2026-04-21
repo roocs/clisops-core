@@ -1,0 +1,17 @@
+{
+  "title": "clisops-core",
+  "creators": [
+    {
+      "name": "Smith, Trevor James",
+      "orcid": "0000-0001-5393-8359"
+    }
+  ],
+  "keywords": [
+    "clisops_core"
+  ],
+  "license": "BSD-3-Clause",
+  "language": "eng",
+  "communities": [],
+  "upload_type": "software",
+  "access_right": "open"
+}

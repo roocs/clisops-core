@@ -1,0 +1,30 @@
+{
+  "template": "https://github.com/Ouranosinc/cookiecutter-pypackage",
+  "commit": "cb8b26cb78a428f6ce447a0ab1b08c0c171ad5aa",
+  "checkout": null,
+  "context": {
+    "cookiecutter": {
+      "full_name": "Trevor James Smith",
+      "email": "smith.trevorj@ouranos.ca",
+      "github_username": "roocs",
+      "orcid_id": "0000-0001-5393-8359",
+      "project_name": "clisops-core",
+      "project_slug": "clisops_core",
+      "project_short_description": "A Python package for peforming core subsetting and spatial operations in clisops",
+      "pypi_username": "Zeitsperre",
+      "version": "0.1.0",
+      "use_pytest": "y",
+      "use_conda": "y",
+      "make_docs": "y",
+      "add_translations": "y",
+      "command_line_interface": "No command-line interface",
+      "create_author_file": "y",
+      "open_source_license": "BSD license",
+      "generated_with_cruft": "y",
+      "__gh_slug": "https://github.com/roocs/clisops-core",
+      "_template": "https://github.com/Ouranosinc/cookiecutter-pypackage",
+      "_commit": "cb8b26cb78a428f6ce447a0ab1b08c0c171ad5aa"
+    }
+  },
+  "directory": null
+}
