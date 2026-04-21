@@ -5,4 +5,4 @@ pip==26.0.1
 pydantic==2.13.0
 pylint==4.0.1
 tox-gh==1.7.1
-tox==4.49.1
+tox==4.53.0
