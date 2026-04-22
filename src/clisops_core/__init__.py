@@ -1,4 +1,4 @@
-"""A Python package for peforming core subsetting and spatial operations in clisops"""
+"""A Python package for performing core subsetting and spatial operations in clisops."""
 
 ###################################################################################
 # BSD 3-Clause License
@@ -31,6 +31,19 @@
 # OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED
 # OF THE POSSIBILITY OF SUCH DAMAGE.
 ###################################################################################
+
+from .subset import (
+    create_mask,
+    subset_bbox,
+    subset_gridpoint,
+    subset_level,
+    subset_level_by_values,
+    subset_shape,
+    subset_time,
+    subset_time_by_components,
+    subset_time_by_values,
+)
+
 
 __author__ = """Trevor James Smith"""
 __email__ = "smith.trevorj@ouranos.ca"
