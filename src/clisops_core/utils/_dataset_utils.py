@@ -6,6 +6,18 @@ import numpy as np
 import xarray as xr
 
 
+__all__ = [
+  "get_main_variable",
+  "get_coord_type",
+  "get_coord_by_type",
+  "is_latitude",
+  "is_longitude",
+  "is_level",
+  "is_time",
+  "is_realization"
+]
+
+
 known_coord_types = ["time", "level", "latitude", "longitude", "realization"]
 
 

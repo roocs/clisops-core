@@ -3,7 +3,7 @@
 import numbers
 import re
 from collections.abc import Callable, Sequence
-from functools import wraps
+from functools import partial, wraps
 from pathlib import Path
 
 import cf_xarray  # noqa: F401
@@ -22,8 +22,8 @@ from shapely.ops import split, unary_union
 from xarray.core import indexing
 from xarray.core.utils import get_temp_dimname
 
-from clisops.utils.dataset_utils import adjust_date_to_calendar, get_coord_by_type
-from clisops.utils.time_utils import to_isoformat
+from .utils.dataset_utils import adjust_date_to_calendar, get_coord_by_type
+from .utils.time_utils import to_isoformat
 
 
 __all__ = [
@@ -127,8 +127,7 @@ def check_start_end_dates(func: Callable) -> Callable:  # numpydoc ignore=GL08
                 raise ValueError()
         except KeyError:
             logger.warning(
-                '"start_date" not found within input date time range. Defaulting to minimum time step in '
-                "xarray object.",
+                '"start_date" not found within input date time range. Defaulting to minimum time step in xarray object.',
                 UserWarning,
                 stacklevel=2,
             )
@@ -194,8 +193,9 @@ def check_start_end_levels(func: Callable) -> Callable:  # numpydoc ignore=GL08
 
         try:
             level = da[get_coord_by_type(da, "level", ignore_aux_coords=True)]
-        except ValueError:
-            raise Exception(f'{subset_level.__name__} requires input data that has a recognisable "level" coordinate.')
+        except ValueError as err:
+            msg = f'{subset_level.__name__} requires input data that has a recognisable "level" coordinate.'
+            raise ValueError(msg) from err
 
         if "first_level" not in kwargs or kwargs["first_level"] is None:
             # use string for first level only - .sel() will include all levels
@@ -214,8 +214,8 @@ def check_start_end_levels(func: Callable) -> Callable:  # numpydoc ignore=GL08
                         UserWarning,
                         stacklevel=2,
                     )
-                except Exception:
-                    raise TypeError(f'"{key}" could not parsed. It must be provided as a number')
+                except ValueError as err:
+                    raise ValueError(f'"{key}" could not parsed. It must be provided as a number') from err
 
         try:
             if float(kwargs["first_level"]) not in [float(lev) for lev in level.values]:
@@ -303,8 +303,7 @@ def check_lons(func: Callable) -> Callable:  # numpydoc ignore=GL08
                     kwargs[lon][kwargs[lon] < 0] += 360
             elif np.all((ds_lon >= 0) | (np.isnan(ds_lon))) and np.any(kwargs[lon] < 0):
                 raise NotImplementedError(
-                    f"Input longitude bounds ({kwargs[lon]}) cross the 0 degree meridian but"
-                    " dataset longitudes are all positive."
+                    f"Input longitude bounds ({kwargs[lon]}) cross the 0 degree meridian but dataset longitudes are all positive."
                 )
             if np.all((ds_lon <= 0) | (np.isnan(ds_lon))) and np.any(kwargs[lon] > 180):
                 if isinstance(kwargs[lon], float):
@@ -495,8 +494,7 @@ def wrap_lons_and_split_at_greenwich(func: Callable) -> Callable:  # numpydoc ig
             if (np.min(x_dim) < 0 and np.max(x_dim) >= 360) or (np.min(x_dim) < -180 and np.max(x_dim) >= 180):
                 # TODO: This should raise an exception, right?
                 logger.warning(
-                    "DataArray doesn't seem to be using lons between 0 and 360 degrees or between -180 and 180 degrees."
-                    " Tread with caution.",
+                    "DataArray doesn't seem to be using lons between 0 and 360 degrees or between -180 and 180 degrees. Proceed with caution.",
                     UserWarning,
                     stacklevel=4,
                 )
@@ -709,19 +707,47 @@ def _curvilinear_grid_exterior_polygon(ds: xarray.Dataset, mode: str = "bbox") -
     shapely.geometry.Polygon
         Grid cell boundary.
     """
-    import math
-
     from shapely.ops import unary_union
 
     def _round_up(x: float, decimal: int = 1) -> float:
-        f = 10**decimal
-        return math.ceil(x * f) / f
+        """
+        Round up.
+
+        Parameters
+        ----------
+        x : float
+            Number.
+        decimal : int
+            Precision. Default: 1.
+
+        Returns
+        -------
+        float
+            The number rounded up to a given precision.
+        """
+        f = 10.0**decimal
+        return np.ceil(x * f) / f
 
     def _round_down(x: float, decimal: int = 1) -> float:
-        f = 10**decimal
-        return math.floor(x * f) / f
+        """
+        Round down.
 
-    if mode == "bbox":
+        Parameters
+        ----------
+        x : float
+            Number.
+        decimal : int
+            Precision. Default: 1.
+
+        Returns
+        -------
+        float
+            The number rounded down to a given precision.
+        """
+        f = 10**decimal
+        return np.floor(x * f) / f
+
+    if mode.lower() == "bbox":
         try:
             # cf-convention
             x = ds.cf.get_bounds("longitude")  # lon_bnds
@@ -736,14 +762,14 @@ def _curvilinear_grid_exterior_polygon(ds: xarray.Dataset, mode: str = "bbox") -
                 x = ds.cf.coordinates["longitude"]
                 y = ds.cf.coordinates["latitude"]
 
-        xmin = _round_down(x.min())
+        xmin = (x.min(),)
         xmax = _round_up(x.max())
         ymin = _round_down(y.min())
         ymax = _round_up(y.max())
 
         pts = [(xmin, ymin), (xmin, ymax), (xmax, ymax), (xmax, ymin)]
 
-    elif mode == "cell_union":
+    elif mode.lower() == "cell_union":
         # x and y should be vertices.
         # There is no guarantee that the sides of the array storing the curvilinear grids correspond to the exterior of
         # the lon/lat grid.
@@ -899,8 +925,7 @@ def shape_bbox_indexer(
     if rectilinear:
         if version.parse(xarray.__version__) < version.Version("2022.6.0"):
             logger.warning(
-                "CLISOPS will require xarray >= 2022.06 in the next minor release. "
-                "Please update your environment dependencies.",
+                "CLISOPS will require xarray >= 2022.06 in the next minor release. Please update your environment dependencies.",
                 DeprecationWarning,
             )
             native_ind, _ = xarray.core.coordinates.remap_label_indexers(ds, ind, method="nearest")
@@ -1033,7 +1058,7 @@ def subset_shape(
     else:
         try:
             shape_crs = CRS(poly.crs)
-        except CRSError:
+        except CRSError as err:
             minbnd, _, maxbnd, _ = poly.total_bounds
             # This is guessing that lons are wrapped around at 180+ but without much information, this might not be true
             if minbnd >= -180 and maxbnd <= 180:
@@ -1041,7 +1066,8 @@ def subset_shape(
             elif minbnd >= 0 and minbnd <= 360:
                 shape_crs = wgs84_wrapped
             else:
-                raise CRSError("Shapefile CRS could not be determined and does not resemble WGS84.")
+                msg = "Shapefile CRS could not be determined and does not resemble WGS84."
+                raise CRSError(msg) from err
             poly.crs = shape_crs
     if not shape_crs.equals(wgs84):
         logger.warning(
@@ -1070,11 +1096,10 @@ def subset_shape(
     # The only case not implemented is when lon_bnds crosses the 0 deg meridian but dataset grid has all positive lons.
     try:
         ds_copy = subset_bbox(ds_copy, lon_bnds=lon_bnds, lat_bnds=lat_bnds)
-    except ValueError as e:
+    except ValueError as err:
         raise ValueError(
-            "No grid cell centroids found within provided polygon bounding box. "
-            'Try using the "buffer" option to create an expanded area.'
-        ) from e
+            'No grid cell centroids found within provided polygon bounding box. Try using the "buffer" option to create an expanded area.'
+        ) from err
     except NotImplementedError:
         logger.info("The bounding box crosses the prime meridian, skipping bbox subset.")
         pass
@@ -1094,10 +1119,11 @@ def subset_shape(
     # We simply want to remove the 0s from the zeroth shape, for our outer mask trick below.
 
     if np.all(mask_2d.isnull()):
-        raise ValueError(
+        msg = (
             f"No grid cell centroids found within provided polygon bounds ({poly.bounds}). "
             'Try using the "buffer" option to create an expanded areas or verify polygon.'
         )
+        raise ValueError(msg)
 
     sp_dims = set(mask_2d.dims)  # Spatial dimensions
 
@@ -1231,12 +1257,7 @@ def subset_bbox(
             da = da.sel({lon: slice(*lon_bnds)})
     # Locstream case (lat and lon are 1D, sharing the dimension)
     elif da[lat].ndim == 1 and da[lon].ndim == 1 and da[lon].dims == da[lat].dims:
-        mask = (
-            (da[lat] < np.max(lat_bnds))
-            & (da[lat] > np.min(lat_bnds))
-            & (da[lon] < np.max(lon_bnds))
-            & (da[lon] > np.min(lon_bnds))
-        )
+        mask = (da[lat] < np.max(lat_bnds)) & (da[lat] > np.min(lat_bnds)) & (da[lon] < np.max(lon_bnds)) & (da[lon] > np.min(lon_bnds))
         da = da.sel({da[lat].dims[0]: mask})
 
     # Curvilinear case (lat and lon are coordinates, not dimensions)
@@ -1259,8 +1280,9 @@ def subset_bbox(
 
         # Crop original array using slice, which is faster than `where`.
         ind = np.where(lon_cond & lat_cond)
-        args = dict()
+        args = {}
 
+        msg = "There were no valid data points found in the requested subset. Please expand the area covered by the bounding box."
         for i, d in enumerate(da[lat].dims):
             try:
                 coords = da[d][ind[i]]
@@ -1269,21 +1291,15 @@ def subset_bbox(
                     bounds=[coords.min().values, coords.max().values],
                     dim=d,
                 )
-            except ValueError:
-                raise ValueError(
-                    "There were no valid data points found in the requested subset. Please expand "
-                    "the area covered by the bounding box."
-                )
+            except ValueError as err:
+                raise ValueError(msg) from err
             args[d] = slice(*bnds)
         # If the dims of lat and lon do not have coords, sel defaults to isel,
         # and then the last element is not returned.
         da = da.sel(**args)
 
         if da[lat].size == 0 or da[lon].size == 0:
-            raise ValueError(
-                "There were no valid data points found in the requested subset. Please expand "
-                "the area covered by the bounding box."
-            )
+            raise ValueError("msg")
 
         # Recompute condition on cropped coordinates
         if lat_bnds is not None:
@@ -1303,12 +1319,7 @@ def subset_bbox(
             da = da.where(lon_cond & lat_cond)
 
     else:
-        raise (
-            Exception(
-                f"{subset_bbox.__name__} requires input data with "
-                f'"lon" and "lat" dimensions, coordinates, or variables.'
-            )
-        )
+        raise (Exception(f'{subset_bbox.__name__} requires input data with "lon" and "lat" dimensions, coordinates, or variables.'))
 
     if start_date or end_date:
         da = subset_time(da, start_date=start_date, end_date=end_date)
@@ -1331,9 +1342,7 @@ def subset_bbox(
     return da
 
 
-def assign_bounds(
-    bounds: tuple[float | None, float | None], coord: xarray.DataArray
-) -> tuple[float | None, float | None]:
+def assign_bounds(bounds: tuple[float | None, float | None], coord: xarray.DataArray) -> tuple[float | None, float | None]:
     """
     Replace unset boundaries by the minimum and maximum coordinates.
 
@@ -1382,13 +1391,42 @@ def _check_desc_coords(
     bounds: tuple[float, float] | list[np.ndarray],
     dim: str,
 ) -> tuple[float, float]:
-    """If Dataset coordinates are descending, and bounds are ascending, reverse bounds."""
+    """
+    If Dataset coordinates are descending, and bounds are ascending, reverse bounds.
+
+    Parameters
+    ----------
+    coord : xarray.Dataset
+        Coordinates.
+    bounds : tuple of (float, float) or list of np.ndarray
+        Boundary coordinates.
+    dim : str
+        Dimension name.
+
+    Returns
+    -------
+    (float, float)
+        Coordinates descending.
+    """
     if np.all(coord.diff(dim=dim) < 0) and len(coord) > 1 and bounds[1] > bounds[0]:
         bounds = np.flip(bounds)
     return bounds
 
 
 def _check_has_overlaps(polygons: gpd.GeoDataFrame) -> None:
+    """
+    Check if polygons are overlapping.
+
+    Parameters
+    ----------
+    polygons : geopandas.GeoDataFrame
+        Polygon definitions.
+
+    Warns
+    -----
+    UserWarning
+        If any overlapping polygons are present in the GeoDataFrame.
+    """
     non_overlapping = []
     for n, p in enumerate(polygons["geometry"][:-1], 1):
         if not any(p.overlaps(g) for g in polygons["geometry"][n:]):
@@ -1401,27 +1439,28 @@ def _check_has_overlaps(polygons: gpd.GeoDataFrame) -> None:
         )
 
 
-def _check_has_overlaps_old(polygons: gpd.GeoDataFrame) -> None:
-    for i, (inda, pola) in enumerate(polygons.iterrows()):
-        for indb, polb in polygons.iloc[i + 1 :].iterrows():
-            if pola.geometry.intersects(polb.geometry):
-                logger.warning(
-                    f"List of shapes contains overlap between {inda} and {indb}. Points will be assigned to {inda}.",
-                    UserWarning,
-                    stacklevel=5,
-                )
-
-
 def _check_crs_compatibility(shape_crs: CRS, raster_crs: CRS) -> None:
-    """If CRS definitions are not WGS84 or incompatible, raise operation warnings."""
+    """
+    If CRS definitions are not WGS84 or incompatible, raise operation warnings.
+
+    Parameters
+    ----------
+    shape_crs : CRS
+        CRS of the vector object.
+    raster_crs : CRS
+        CRS of the raster object.
+
+    Warns
+    -----
+    UserWarning
+        If raster CRS requires wrapping or if geoid differs between CRS definitions.
+    """
     wgs84 = CRS(4326)
     if not shape_crs.equals(raster_crs):
         if (shape_crs.coordinate_system.name != raster_crs.coordinate_system.name) and (
             shape_crs.axis_info[0].unit_name != raster_crs.axis_info[0].unit_name
         ):
-            raise CRSError(
-                "CRS definitions are not compatible. Please ensure both are using the same coordinate system and units."
-            )
+            raise CRSError("CRS definitions are not compatible. Please ensure both are using the same coordinate system and units.")
         elif "lon_wrap" in raster_crs.to_string() and "lon_wrap" not in shape_crs.to_string():
             logger.warning(
                 "CRS definitions are similar but raster lon values must be wrapped.",
@@ -1430,7 +1469,7 @@ def _check_crs_compatibility(shape_crs: CRS, raster_crs: CRS) -> None:
             )
         elif not shape_crs.equals(wgs84) and not raster_crs.equals(wgs84):
             logger.warning(
-                "CRS definitions are not similar or both not using WGS84 datum. Tread with caution.",
+                "CRS definitions are not similar or both not using WGS84 datum. Proceed with caution.",
                 UserWarning,
                 stacklevel=3,
             )
@@ -1546,11 +1585,7 @@ def subset_gridpoint(
             da = xarray.concat(pts, dim=ptdim)
             dist = xarray.concat(dists, dim=ptdim)
     else:
-        raise (
-            Exception(
-                f'{subset_gridpoint.__name__} requires input data with "lon" and "lat" coordinates or data variables.'
-            )
-        )
+        raise (Exception(f'{subset_gridpoint.__name__} requires input data with "lon" and "lat" coordinates or data variables.'))
 
     if tolerance is not None and dist is not None:
         da = da.where(dist < tolerance)
@@ -1863,15 +1898,39 @@ def distance(
         k = d.argmin()
         i, j, _ = np.unravel_index(k, d.shape)
     """
-    ptdim = lat.dims[0]
+    if isinstance(lat, xarray.DataArray):
+        ptdim = lat.dims[0]
+    else:
+        ptdim = "lat"
+
+    def _func(geoid, lons, lats, lon, lat) -> np.ndarray:
+        """
+        Compute geodesic distance(s) between coordinate pairs using a given geoid.
+
+        Parameters
+        ----------
+        geoid : pyproj.Geod
+            The reference ellipsoid (e.g., WGS84).
+        lons : array-like
+            Longitudes of the starting point(s), in degrees.
+        lats : array-like
+            Latitudes of the starting point(s), in degrees.
+        lon : array-like or scalar
+            Longitude(s) of the destination point(s), in degrees.
+        lat : array-like or scalar
+            Latitude(s) of the destination point(s), in degrees.
+
+        Returns
+        -------
+        np.ndarray
+            Geodesic distance(s) in meters between each (lons, lats) pair and
+            the corresponding (lon, lat) pair.
+        """
+        return geoid.inv(lons, lats, lon, lat)[2]
 
     g = Geod(ellps="WGS84")  # WGS84 ellipsoid - decent globally
-
-    def _func(lons, lats, lon, lat):
-        return g.inv(lons, lats, lon, lat)[2]
-
     out = xarray.apply_ufunc(
-        _func,
+        partial(_func, g),
         *xarray.broadcast(da.lon.load(), da.lat.load(), lon, lat),
         input_core_dims=[[ptdim]] * 4,
         output_core_dims=[[ptdim]],

@@ -32,7 +32,7 @@
 # OF THE POSSIBILITY OF SUCH DAMAGE.
 ###################################################################################
 
-from .subset import (
+from clisops_core.subset import (
     create_mask,
     subset_bbox,
     subset_gridpoint,
