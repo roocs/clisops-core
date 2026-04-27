@@ -1,15 +1,17 @@
 """Dataset utilities."""
 
 import warnings
+from importlib.util import find_spec
 
 import cftime
-import dask.array as da
 import numpy as np
 import xarray as xr
 
 
 __all__ = ["get_coord_by_type", "get_coord_type", "get_main_variable", "is_latitude", "is_level", "is_longitude", "is_realization", "is_time"]
 
+
+_dask_installed = bool(find_spec("dask"))
 
 known_coord_types = ["time", "level", "latitude", "longitude", "realization"]
 
@@ -314,9 +316,12 @@ def _is_time(coord: xr.DataArray | xr.Dataset) -> bool:
     # Safely get the first element without loading the entire array
     first_value = coord.isel({dim: 0 for dim in coord.dims}).values
 
-    # Compute only if it's a Dask array
-    if isinstance(first_value, da.Array):
-        first_value = first_value.compute()
+    if _dask_installed:
+        import dask.array as da
+
+        # Compute only if it's a Dask array
+        if isinstance(first_value, da.Array):
+            first_value = first_value.compute()
 
     return isinstance(first_value.item(0), cftime.datetime)
 
