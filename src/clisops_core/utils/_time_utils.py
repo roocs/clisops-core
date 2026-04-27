@@ -1,4 +1,7 @@
+"""Time Utilities."""
+
 import numpy as np
+
 
 __all__ = ["to_isoformat"]
 

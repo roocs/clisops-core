@@ -1,3 +1,5 @@
+"""Dataset utilities."""
+
 import warnings
 
 import cftime
@@ -6,16 +8,7 @@ import numpy as np
 import xarray as xr
 
 
-__all__ = [
-  "get_main_variable",
-  "get_coord_type",
-  "get_coord_by_type",
-  "is_latitude",
-  "is_longitude",
-  "is_level",
-  "is_time",
-  "is_realization"
-]
+__all__ = ["get_coord_by_type", "get_coord_type", "get_main_variable", "is_latitude", "is_level", "is_longitude", "is_realization", "is_time"]
 
 
 known_coord_types = ["time", "level", "latitude", "longitude", "realization"]
@@ -149,7 +142,8 @@ def get_coord_by_type(
         main_var = get_main_variable(ds)
     except ValueError:
         if warn_if_no_main_variable:
-            warnings.warn(f"No main variable found for dataset '{ds}'.")
+            msg = f"No main variable found for dataset '{ds}'."
+            warnings.warn(msg, stacklevel=2)
         main_var = None
 
     # Loop through all (potential) coordinates to find all possible matches
@@ -175,7 +169,8 @@ def get_coord_by_type(
 
     # Return None if no match
     if len(coords) == 0:
-        warnings.warn(f"No coordinate variable found for type '{coord_type}'.")
+        msg = f"No coordinate variable found for type '{coord_type}'."
+        warnings.warn(msg, stacklevel=2)
         return None
     elif len(coords) == 1:
         if return_further_matches:
@@ -184,7 +179,8 @@ def get_coord_by_type(
             return coords[0]
     # If more than one match is found, a selection has to be made
     else:
-        warnings.warn(f"More than one coordinate variable found for type '{coord_type}'. Selecting the best fit.")
+        msg = f"More than one coordinate variable found for type '{coord_type}'. Selecting the best fit."
+        warnings.warn(msg, stacklevel=2)
         # Sort in terms of number of dimensions
         coords = sorted(coords, key=lambda x: len(ds[x].dims), reverse=True)
 
@@ -205,8 +201,6 @@ def get_coord_by_type(
             return coords[0], coords[1:]
         else:
             return coords[0]
-
-
 
 
 def is_latitude(coord: xr.DataArray | xr.Dataset) -> bool:
@@ -300,6 +294,16 @@ def _is_time(coord: xr.DataArray | xr.Dataset) -> bool:
     Check if a coordinate uses cftime datetime objects.
 
     Handles Dask-backed arrays for lazy evaluation.
+
+    Parameters
+    ----------
+    coord : xarray.DataArray or xarray.Dataset
+        Coordinate of xarray dataset, e.g. coord = ds.coords[coord_id].
+
+    Returns
+    -------
+    bool
+        True if the coordinate is time, otherwise False.
     """
     if coord.size == 0:
         return False  # Empty array
@@ -372,4 +376,3 @@ def is_realization(coord: xr.DataArray | xr.Dataset) -> bool:
         return True
 
     return False
-
