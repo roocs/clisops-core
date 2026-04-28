@@ -61,7 +61,7 @@ maintainers = [
   {name = "Trevor James Smith", email = "smith.trevorj@ouranos.ca"}
 ]
 readme = {file = "README.rst", content-type = "text/x-rst"}
-requires-python = ">=3.10.0"
+requires-python = ">=3.11.0"
 keywords = ["clisops-core"]
 license = "BSD-3-Clause"
 license-files = ["LICENSE"]
@@ -72,7 +72,6 @@ classifiers = [
   "Operating System :: OS Independent",
   "Programming Language :: Python :: 3",
   "Programming Language :: Python :: 3 :: Only",
-  "Programming Language :: Python :: 3.10",
   "Programming Language :: Python :: 3.11",
   "Programming Language :: Python :: 3.12",
   "Programming Language :: Python :: 3.13",
@@ -83,19 +82,20 @@ classifiers = [
 dynamic = ["description", "version"]
 dependencies = [
   "cftime >=1.4.1",
+  "cf-xarray",
   "geopandas >=1.0.0",
-  "jinja2 >=2.11",
   "loguru >=0.5.3",
   "numpy >=1.23.0,<2.1",
   "packaging >=23.2",
-  "pandas >=1.5.0",
-  "roocs-grids >=0.1.2",
-  "typer >=0.12.3",
+  "pandas >=2.0",
+  "pyproj",
+  "scipy",
+  "shapely",
   "xarray >=2022.6.0"
 ]
 
 [project.optional-dependencies]
-extras = ["xesmf >=0.8.2"]
+extras = []
 
 [project.urls]
 # "Homepage" = "https://clisops-core.readthedocs.io/"
@@ -192,7 +192,9 @@ source = ["clisops_core"]
 
 [tool.deptry]
 extend_exclude = ["extras"]
-pep621_dev_dependency_groups = ["extras"]
+
+[tool.deptry.per_rule_ignores]
+DEP001 = ["dask"]
 
 [tool.flit.sdist]
 include = [

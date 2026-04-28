@@ -3,22 +3,15 @@ channels:
   - conda-forge
   - nodefaults
 dependencies:
-  - python >=3.10,<3.15
+  - python >=3.11,<3.15
   - cftime >=1.4.1
-  - filelock >=3.15.4
+  - cf-xarray
   - geopandas >=1.0.0
-  - jinja2 >=2.11
   - loguru >=0.5.3
-  - numpy >=1.23.0,<2.1
+  - numpy >=2.2
   - packaging >=23.2
-  - pandas >=1.5.0
-  - roocs-grids >=0.1.2
-  - xarray >=2022.6.0 # Problems can occur with regridding, see: https://github.com/pydata/xarray/issues/7794
-  # Extras
-  - xesmf >=0.8.2
-  # IO
-  - netcdf4 >=1.4
-  - pooch >=1.8.0
+  - pandas >=2.0
+  - xarray >=2022.6.0
   # Dev tools and testing
   - pip >=26.0.1
   - bump-my-version >=1.3.0
