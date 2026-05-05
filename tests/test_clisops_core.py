@@ -4,8 +4,6 @@
 import pathlib
 from importlib.util import find_spec
 
-from clisops_core import clisops_core  # noqa: F401
-
 
 # import pytest
 

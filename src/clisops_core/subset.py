@@ -22,8 +22,7 @@ from shapely.ops import split, unary_union
 from xarray.core import indexing
 from xarray.core.utils import get_temp_dimname
 
-from .utils.dataset_utils import adjust_date_to_calendar, get_coord_by_type
-from .utils.time_utils import to_isoformat
+from .utils import adjust_date_to_calendar, get_coord_by_type, to_isoformat
 
 
 __all__ = [
@@ -438,7 +437,7 @@ def convert_lat_lon_to_da(func: Callable) -> Callable:  # numpydoc ignore=GL08
         """
         lat = kwargs.pop("lat", None)
         lon = kwargs.pop("lon", None)
-        if not isinstance(lat, type(None), xarray.DataArray) or not isinstance(lon, type(None), xarray.DataArray):
+        if not isinstance(lat, (type(None), xarray.DataArray)) or not isinstance(lon, (type(None), xarray.DataArray)):
             try:
                 if len(lat) != len(lon):
                     raise ValueError("'lat' and 'lon' must have the same length.")
