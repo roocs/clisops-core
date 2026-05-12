@@ -25,6 +25,7 @@ test = [
   "coverage[toml] >=7.13.4",
   "pytest >=9.0.2",
   "pytest-cov >=7.0.0",
+  "pytest-loguru >=0.3.0",
   "pytest-xdist >=3.2.0",
   {include-group = "io"}
 ]

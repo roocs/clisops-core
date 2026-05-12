@@ -1014,15 +1014,16 @@ class TestGridPolygon:
         assert MultiPoint(pts).within(poly)
 
 
+@pytest.mark.skipif(not HAS_XESMF, reason="xESMF required.")
 class TestShapeBboxIndexer:
 
-    xesmf = pytest.importorskip("xesmf", reason="xESMF required.")
-
     def test_rectilinear(self):
+        import xesmf
+
         # Create small polygon fitting in one cell.
         x, y = -150, 35
         p = Point(x, y)
-        ds = self.xesmf.util.cf_grid_2d(-200, 0, 20, -60, 60, 10)
+        ds = xesmf.util.cf_grid_2d(-200, 0, 20, -60, 60, 10)
 
         # Confirm that after subsetting, the polygon is still entirely within the grid.
         for b in [1, 10, 20]:
@@ -1033,6 +1034,7 @@ class TestShapeBboxIndexer:
     def test_complex_geometries(self):
         # Test with geometries that cannot be simplified to a single polygon using `unary_union`.
         import shapely.wkt
+        import xesmf
 
         p1 = shapely.wkt.loads(
             "POLYGON((-65.5563 49.257, -64.2166 48.5017, -70.8387 45.2339, -74.6375 44.9993, -65.5563 49.257))"
@@ -1049,7 +1051,7 @@ class TestShapeBboxIndexer:
             "(-78.5814 58.6764, -78.5831 58.675, -78.5802 58.6739, -78.5807 58.6761, -78.5814 58.6764))"
         )
 
-        ds = self.xesmf.util.cf_grid_2d(-200, 0, 20, 0, 71, 10)
+        ds = xesmf.util.cf_grid_2d(-200, 0, 20, 0, 71, 10)
         inds = subset.shape_bbox_indexer(ds, gpd.GeoDataFrame(geometry=[p1, p2]))
         assert "lon" in inds and "lat" in inds, "Expected lon and lat in indexer."
         env = subset.grid_exterior_polygon(ds.isel(inds))
@@ -1057,15 +1059,16 @@ class TestShapeBboxIndexer:
         assert p2.within(env)
 
         # inds should be empty is region is not contained in grid exterior geometry
-        ds = self.xesmf.util.cf_grid_2d(-200, 0, 20, 0, 61, 10)  # polygon goes up to 62, grid stops at 60
+        ds = xesmf.util.cf_grid_2d(-200, 0, 20, 0, 61, 10)  # polygon goes up to 62, grid stops at 60
         inds = subset.shape_bbox_indexer(ds, gpd.GeoDataFrame(geometry=[p1, p2]))
         assert inds == {}
 
     def test_curvilinear(self):
         # Check that grid along lon/lat and a rotated grid are indexed identically for geometry and rotated geometry.
+        import xesmf
         from shapely.affinity import rotate
 
-        ds = self.xesmf.util.grid_2d(0, 100, 10, 0, 60, 6)
+        ds = xesmf.util.grid_2d(0, 100, 10, 0, 60, 6)
         rds = rotated_grid_2d(0, 100, 10, 0, 60, 6, angle=45)
 
         geom = Polygon(([0, 0], [50, 0], [50, 30], [0, 30]))
@@ -1078,9 +1081,10 @@ class TestShapeBboxIndexer:
 
     def test_multipoints(self):
         # Test with a MultiPoint geometry.
+        import xesmf
         from shapely.geometry import MultiPoint, Point
 
-        ds = self.xesmf.util.cf_grid_2d(-200, 0, 20, -60, 60, 10)
+        ds = xesmf.util.cf_grid_2d(-200, 0, 20, -60, 60, 10)
 
         coords = (-150, 35), (-100, 40), (-125, 55)
 
