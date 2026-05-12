@@ -13,14 +13,8 @@ from clisops_core import subset
 from clisops_core.utils.testing import ContextLogger
 
 
-HAS_XESMF = False
-try:
-    import xesmf
-    HAS_XESMF = True
-except ImportError:
-    xesmf = None
-
 HAS_DASK = bool(ilu.find_spec("dask"))
+HAS_XESMF = bool(ilu.find_spec("xesmf"))
 
 
 class TestSubsetTime:
@@ -246,16 +240,16 @@ class TestSubsetGridPoint:
         np.testing.assert_array_equal(out, out1)
 
         # Dataset with tasmax, lon and lat as data variables (i.e. lon, lat not coords of tasmax)
-        daT1 = xr.DataArray(np.transpose(da1.values), dims=dims)
-        for d in daT1.dims:
+        da1_transpose = xr.DataArray(np.transpose(da1.values), dims=dims)
+        for d in da1_transpose.dims:
             args = dict()
             args[d] = da1[d]
-            daT1 = daT1.assign_coords(**args)
-        dsT = xr.Dataset(data_vars=None, coords=daT1.coords)
-        dsT["tasmax"] = daT1
-        dsT["lon"] = xr.DataArray(np.transpose(da1.lon.values), dims=["rlon", "rlat"])
-        dsT["lat"] = xr.DataArray(np.transpose(da1.lat.values), dims=["rlon", "rlat"])
-        out2 = subset.subset_gridpoint(dsT, lon=lon, lat=lat)
+            da1_transpose = da1_transpose.assign_coords(**args)
+        ds_tasmax = xr.Dataset(data_vars=None, coords=da1_transpose.coords)
+        ds_tasmax["tasmax"] = da1_transpose
+        ds_tasmax["lon"] = xr.DataArray(np.transpose(da1.lon.values), dims=["rlon", "rlat"])
+        ds_tasmax["lat"] = xr.DataArray(np.transpose(da1.lat.values), dims=["rlon", "rlat"])
+        out2 = subset.subset_gridpoint(ds_tasmax, lon=lon, lat=lat)
         np.testing.assert_almost_equal(out2.lon, lon, 1)
         np.testing.assert_almost_equal(out2.lat, lat, 1)
         np.testing.assert_array_equal(out, out2.tasmax)
@@ -319,8 +313,8 @@ class TestSubsetBbox:
 
     lon = [-75.4, -68]
     lat = [44.1, 47.1]
-    lonGCM = [-70.0, -60.0]
-    latGCM = [43.0, 59.0]
+    lon_gcm = [-70.0, -60.0]
+    lat_gcm = [43.0, 59.0]
 
     @pytest.mark.skipif(not HAS_DASK, reason="Dask required.")
     def test_dataset(self, nimbus):
@@ -353,17 +347,17 @@ class TestSubsetBbox:
 
         out = subset.subset_bbox(
             da,
-            lon_bnds=self.lonGCM,
-            lat_bnds=self.latGCM,
+            lon_bnds=self.lon_gcm,
+            lat_bnds=self.lat_gcm,
             start_date=str(yr_st),
             end_date=str(yr_ed),
         )
         assert out.lon.values.size != 0
         assert out.lat.values.size != 0
-        assert np.all(out.lon >= np.min(self.lonGCM))
-        assert np.all(out.lon <= np.max(self.lonGCM))
-        assert np.all(out.lat >= np.min(self.latGCM))
-        assert np.all(out.lat <= np.max(self.latGCM))
+        assert np.all(out.lon >= np.min(self.lon_gcm))
+        assert np.all(out.lon <= np.max(self.lon_gcm))
+        assert np.all(out.lat >= np.min(self.lat_gcm))
+        assert np.all(out.lat <= np.max(self.lat_gcm))
         np.testing.assert_array_equal(out.time.dt.year.max(), yr_ed)
         np.testing.assert_array_equal(out.time.dt.year.min(), yr_st)
 
@@ -518,16 +512,16 @@ class TestSubsetBbox:
     def test_positive_lons(self, nimbus):
         da = xr.open_dataset(nimbus.fetch(self.nc_poslons)).tas
 
-        out = subset.subset_bbox(da, lon_bnds=self.lonGCM, lat_bnds=self.latGCM)
+        out = subset.subset_bbox(da, lon_bnds=self.lon_gcm, lat_bnds=self.lat_gcm)
         assert out.lon.values.size != 0
         assert out.lat.values.size != 0
-        assert np.all(out.lon >= np.min(np.asarray(self.lonGCM) + 360))
-        assert np.all(out.lon <= np.max(np.asarray(self.lonGCM) + 360))
-        assert np.all(out.lat >= np.min(self.latGCM))
-        assert np.all(out.lat <= np.max(self.latGCM))
+        assert np.all(out.lon >= np.min(np.asarray(self.lon_gcm) + 360))
+        assert np.all(out.lon <= np.max(np.asarray(self.lon_gcm) + 360))
+        assert np.all(out.lat >= np.min(self.lat_gcm))
+        assert np.all(out.lat <= np.max(self.lat_gcm))
 
-        out = subset.subset_bbox(da, lon_bnds=np.array(self.lonGCM) + 360, lat_bnds=self.latGCM)
-        assert np.all(out.lon >= np.min(np.asarray(self.lonGCM) + 360))
+        out = subset.subset_bbox(da, lon_bnds=np.array(self.lon_gcm) + 360, lat_bnds=self.lat_gcm)
+        assert np.all(out.lon >= np.min(np.asarray(self.lon_gcm) + 360))
 
     def test_time(self, nimbus):
         da = xr.open_dataset(nimbus.fetch(self.nc_poslons)).tas
@@ -535,17 +529,17 @@ class TestSubsetBbox:
 
         out = subset.subset_bbox(
             da,
-            lon_bnds=self.lonGCM,
-            lat_bnds=self.latGCM,
+            lon_bnds=self.lon_gcm,
+            lat_bnds=self.lat_gcm,
             start_date="2050",
             end_date="2059",
         )
         assert out.lon.values.size != 0
         assert out.lat.values.size != 0
-        assert np.all(out.lon >= np.min(self.lonGCM))
-        assert np.all(out.lon <= np.max(self.lonGCM))
-        assert np.all(out.lat >= np.min(self.latGCM))
-        assert np.all(out.lat <= np.max(self.latGCM))
+        assert np.all(out.lon >= np.min(self.lon_gcm))
+        assert np.all(out.lon <= np.max(self.lon_gcm))
+        assert np.all(out.lat >= np.min(self.lat_gcm))
+        assert np.all(out.lat <= np.max(self.lat_gcm))
         np.testing.assert_array_equal(out.time.min().dt.year, 2050)
         np.testing.assert_array_equal(out.time.min().dt.month, 1)
         np.testing.assert_array_equal(out.time.min().dt.day, 1)
@@ -555,17 +549,17 @@ class TestSubsetBbox:
 
         out = subset.subset_bbox(
             da,
-            lon_bnds=self.lonGCM,
-            lat_bnds=self.latGCM,
+            lon_bnds=self.lon_gcm,
+            lat_bnds=self.lat_gcm,
             start_date="2050-02-05",
             end_date="2059-07-15",
         )
         assert out.lon.values.size != 0
         assert out.lat.values.size != 0
-        assert np.all(out.lon >= np.min(self.lonGCM))
-        assert np.all(out.lon <= np.max(self.lonGCM))
-        assert np.all(out.lat >= np.min(self.latGCM))
-        assert np.all(out.lat <= np.max(self.latGCM))
+        assert np.all(out.lon >= np.min(self.lon_gcm))
+        assert np.all(out.lon <= np.max(self.lon_gcm))
+        assert np.all(out.lat >= np.min(self.lat_gcm))
+        assert np.all(out.lat <= np.max(self.lat_gcm))
         np.testing.assert_array_equal(out.time.min().dt.year, 2050)
         np.testing.assert_array_equal(out.time.min().dt.month, 2)
         np.testing.assert_array_equal(out.time.min().dt.day, 5)
@@ -579,8 +573,8 @@ class TestSubsetBbox:
         with pytest.raises(ValueError):
             subset.subset_bbox(
                 da,
-                lon_bnds=self.lonGCM,
-                lat_bnds=self.latGCM,
+                lon_bnds=self.lon_gcm,
+                lat_bnds=self.lat_gcm,
                 start_date="2056",
                 end_date="2055",
             )
@@ -986,6 +980,8 @@ class TestSubsetLevel:
 class TestGridPolygon:
     @pytest.mark.skipif(not HAS_XESMF, reason="xESMF required.")
     def test_rectilinear(self):
+        import xesmf
+
         # CF-Compliant with bounds
         ds = xesmf.util.cf_grid_2d(-200, -100, 20, -60, 60, 10)
         poly = subset._rectilinear_grid_exterior_polygon(ds)
@@ -1019,12 +1015,14 @@ class TestGridPolygon:
 
 
 class TestShapeBboxIndexer:
-    @pytest.mark.skipif(not HAS_XESMF, reason="xESMF required.")
+
+    xesmf = pytest.importorskip("xesmf", reason="xESMF required.")
+
     def test_rectilinear(self):
         # Create small polygon fitting in one cell.
         x, y = -150, 35
         p = Point(x, y)
-        ds = xesmf.util.cf_grid_2d(-200, 0, 20, -60, 60, 10)
+        ds = self.xesmf.util.cf_grid_2d(-200, 0, 20, -60, 60, 10)
 
         # Confirm that after subsetting, the polygon is still entirely within the grid.
         for b in [1, 10, 20]:
@@ -1032,7 +1030,6 @@ class TestShapeBboxIndexer:
             inds = subset.shape_bbox_indexer(ds, gpd.GeoDataFrame(geometry=[pb]))
             assert pb.within(subset.grid_exterior_polygon(ds.isel(inds)))
 
-    @pytest.mark.skipif(not HAS_XESMF, reason="xESMF required.")
     def test_complex_geometries(self):
         # Test with geometries that cannot be simplified to a single polygon using `unary_union`.
         import shapely.wkt
@@ -1052,7 +1049,7 @@ class TestShapeBboxIndexer:
             "(-78.5814 58.6764, -78.5831 58.675, -78.5802 58.6739, -78.5807 58.6761, -78.5814 58.6764))"
         )
 
-        ds = xesmf.util.cf_grid_2d(-200, 0, 20, 0, 71, 10)
+        ds = self.xesmf.util.cf_grid_2d(-200, 0, 20, 0, 71, 10)
         inds = subset.shape_bbox_indexer(ds, gpd.GeoDataFrame(geometry=[p1, p2]))
         assert "lon" in inds and "lat" in inds, "Expected lon and lat in indexer."
         env = subset.grid_exterior_polygon(ds.isel(inds))
@@ -1060,16 +1057,15 @@ class TestShapeBboxIndexer:
         assert p2.within(env)
 
         # inds should be empty is region is not contained in grid exterior geometry
-        ds = xesmf.util.cf_grid_2d(-200, 0, 20, 0, 61, 10)  # polygon goes up to 62, grid stops at 60
+        ds = self.xesmf.util.cf_grid_2d(-200, 0, 20, 0, 61, 10)  # polygon goes up to 62, grid stops at 60
         inds = subset.shape_bbox_indexer(ds, gpd.GeoDataFrame(geometry=[p1, p2]))
         assert inds == {}
 
-    @pytest.mark.skipif(not HAS_XESMF, reason="xESMF required.")
     def test_curvilinear(self):
         # Check that grid along lon/lat and a rotated grid are indexed identically for geometry and rotated geometry.
         from shapely.affinity import rotate
 
-        ds = xesmf.util.grid_2d(0, 100, 10, 0, 60, 6)
+        ds = self.xesmf.util.grid_2d(0, 100, 10, 0, 60, 6)
         rds = rotated_grid_2d(0, 100, 10, 0, 60, 6, angle=45)
 
         geom = Polygon(([0, 0], [50, 0], [50, 30], [0, 30]))
@@ -1080,12 +1076,11 @@ class TestShapeBboxIndexer:
         ri = subset.shape_bbox_indexer(rds, gpd.GeoSeries([rgeom]))
         assert ri == i
 
-    @pytest.mark.skipif(not HAS_XESMF, reason="xESMF required.")
     def test_multipoints(self):
         # Test with a MultiPoint geometry.
         from shapely.geometry import MultiPoint, Point
 
-        ds = xesmf.util.cf_grid_2d(-200, 0, 20, -60, 60, 10)
+        ds = self.xesmf.util.cf_grid_2d(-200, 0, 20, -60, 60, 10)
 
         coords = (-150, 35), (-100, 40), (-125, 55)
 
@@ -1106,6 +1101,8 @@ class TestShapeBboxIndexer:
 
 @pytest.mark.skipif(not HAS_XESMF, reason="xESMF required.")
 def rotated_grid_2d(lon0_b, lon1_b, d_lon, lat0_b, lat1_b, d_lat, angle):
+    import xesmf
+
     # Rotate lat lon by degree.
     ds = xesmf.util.grid_2d(lon0_b, lon1_b, d_lon, lat0_b, lat1_b, d_lat)
 

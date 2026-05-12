@@ -1,6 +1,7 @@
+import pytest
+
 from clisops_core.utils import testing
 from clisops_core.utils.testing import stratus as _stratus
-import pytest
 
 
 @pytest.fixture(scope="session", autouse=True)

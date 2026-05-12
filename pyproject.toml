@@ -188,6 +188,7 @@ values = [
 
 [tool.codespell]
 ignore-words-list = "astroid,socio-economic,thirdparty"
+skip = "docs/_build"
 
 [tool.coverage.paths]
 source = ["src/clisops_core/", "*/site-packages/clisops_core/"]
@@ -202,6 +203,7 @@ extend_exclude = ["extras"]
 
 [tool.deptry.per_rule_ignores]
 DEP001 = ["dask"]
+DEP002 = ["bottleneck"]
 
 [tool.flit.sdist]
 include = [
