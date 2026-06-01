@@ -3,7 +3,6 @@
 # without importing the main package when its dependencies are not installed.
 # See: https://packaging.python.org/guides/single-sourcing-package-version
 
-
 __author__ = """Trevor James Smith"""
 __email__ = "smith.trevorj@ouranos.ca"
 __copyright__ = "Copyright 2026. United Kingdom Research and Innovation and Ouranos Inc."
