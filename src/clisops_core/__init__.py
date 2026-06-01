@@ -59,6 +59,6 @@ def showwarning(message, *args, **kwargs):  # numpydoc ignore=PR01
 showwarning_ = warnings.showwarning
 warnings.showwarning = showwarning
 
-# Disable logging for clisops and remove the logger that is instantiated on import
+# Disable logging for clisops_core and remove the logger that is instantiated on import
 logger.disable("clisops_core")
 logger.remove()

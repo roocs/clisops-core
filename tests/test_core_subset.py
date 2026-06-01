@@ -50,7 +50,7 @@ class TestSubsetTime:
         assert '"end_date" not found within input date time range. Defaulting to maximum time step in xarray object.' in caplog.text
 
     def test_warnings(self, caplog, nimbus):
-        caplog.set_level("WARNING", logger="clisops")
+        caplog.set_level("WARNING", logger="clisops_core")
 
         da = xr.open_dataset(nimbus.fetch(self.nc_poslons)).tas
 
@@ -902,7 +902,7 @@ class TestSubsetLevel:
         np.testing.assert_array_equal(out.plev.max(), lev_st)
 
     def test_level_outofbounds(self, caplog, nimbus):
-        caplog.set_level("WARNING", logger="clisops")
+        caplog.set_level("WARNING", logger="clisops_core")
         da = xr.open_dataset(nimbus.fetch(self.nc_plev)).o3
         lev_st = 10000000
         lev_ed = 10
@@ -917,7 +917,7 @@ class TestSubsetLevel:
         assert '"last_level" has been nudged to nearest valid level in xarray object.' in caplog.text
 
     def test_warnings(self, caplog, nimbus):
-        caplog.set_level("WARNING", logger="clisops")
+        caplog.set_level("WARNING", logger="clisops_core")
 
         da = xr.open_dataset(nimbus.fetch(self.nc_plev)).o3
 

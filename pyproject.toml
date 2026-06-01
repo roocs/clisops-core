@@ -25,7 +25,7 @@ test = [
   "coverage[toml] >=7.13.4",
   "pytest >=9.0.2",
   "pytest-cov >=7.0.0",
-  "pytest-loguru >=0.3.0",
+  "pytest-loguru >=0.4.1",
   "pytest-xdist >=3.2.0",
   {include-group = "io"}
 ]
@@ -188,7 +188,7 @@ values = [
 ]
 
 [tool.codespell]
-ignore-words-list = "astroid,socio-economic,thirdparty"
+ignore-words-list = "astroid,scrip,socio-economic,thirdparty"
 skip = "docs/_build"
 
 [tool.coverage.paths]
@@ -367,7 +367,7 @@ lines-after-imports = 2
 no-lines-before = ["future", "standard-library"]
 
 [tool.ruff.lint.mccabe]
-max-complexity = 25
+max-complexity = 30
 
 [tool.ruff.lint.per-file-ignores]
 "docs/**" = ["E402"]

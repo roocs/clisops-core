@@ -1,8 +1,12 @@
 import functools
+import sys
 import warnings
 from collections.abc import Callable
-import xarray as xr
 from types import FunctionType, ModuleType
+
+from loguru import logger
+
+import xarray as xr
 from packaging.version import Version
 
 
@@ -28,6 +32,48 @@ XARRAY_WARNING_MESSAGE = (
     f"Please use xarray version >= {XARRAY_COMPATIBLE_VERSION}. "
     "For more information, see: https://github.com/pydata/xarray/issues/7794."
 )
+
+def _logging_examples() -> None:
+    """Testing module."""
+    logger.trace("0")
+    logger.debug("1")
+    logger.info("2")
+    logger.success("2.5")
+    logger.warning("3")
+    logger.error("4")
+    logger.critical("5")
+
+
+def enable_logging() -> list[int]:
+    """
+    Enable logging for CLISOPS.
+
+    Returns
+    -------
+    list[int]
+        List of enabled log levels, e.g., [10, 20, 30, 40, 50].
+    """
+    logger.enable("clisops")
+
+    config = {
+        "handlers": [
+            {
+                "sink": sys.stdout,
+                "format": "<green>{time:YYYY-MM-DD HH:mm:ss.SSS Z UTC}</>"
+                " <red>|</> <lvl>{level}</> <red>|</> <cyan>{name}:{function}:{line}</>"
+                " <red>|</> <lvl>{message}</>",
+                "level": "INFO",
+            },
+            {
+                "sink": sys.stderr,
+                "format": "<red>"
+                "{time:YYYY-MM-DD HH:mm:ss.SSS Z UTC} | {level} | {name}:{function}:{line} | {message}"
+                "</>",
+                "level": "WARNING",
+            },
+        ]
+    }
+    return logger.configure(**config)
 
 
 def require_module(
@@ -84,8 +130,8 @@ def require_module(
                     warnings.warn(max_supported_warning, stacklevel=2)
                 else:
                     warnings.warn(
-                        f"Package {module_name} version {module.__version__} "
-                        f"is greater than the suggested version {max_supported_version}.", stacklevel=2
+                        f"Package {module_name} version {module.__version__} is greater than the suggested version {max_supported_version}.",
+                        stacklevel=2,
                     )
 
         if unsupported_version_range is not None:
@@ -94,9 +140,9 @@ def require_module(
                     "The unsupported_version_range argument must be a list or tuple with two elements of type str, "
                     "with the elements being the minimum and maximum versions of an unsupported version range."
                 )
-            if Version(module.__version__) >= Version(unsupported_version_range[0]) and Version(
-                module.__version__
-            ) < Version(unsupported_version_range[1]):
+            if Version(module.__version__) >= Version(unsupported_version_range[0]) and Version(module.__version__) < Version(
+                unsupported_version_range[1]
+            ):
                 warnings.warn(max_supported_warning, stacklevel=2)
 
         return func(*args, **kwargs)
