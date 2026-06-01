@@ -35,7 +35,7 @@ class TestSubsetTime:
         np.testing.assert_array_equal(out.time.dt.year.min(), int(yr_st))
 
     def test_time_dates_outofbounds(self, caplog, nimbus):
-        caplog.set_level("WARNING", logger="clisops")
+        caplog.set_level("WARNING", logger="clisops_core")
 
         da = xr.open_dataset(nimbus.fetch(self.nc_poslons)).tas
         yr_st = "1776"
@@ -46,14 +46,8 @@ class TestSubsetTime:
         np.testing.assert_array_equal(out.time.dt.year.min(), da.time.dt.year.min())
         np.testing.assert_array_equal(out.time.dt.year.max(), da.time.dt.year.max())
 
-        assert (
-            '"start_date" not found within input date time range. Defaulting to minimum time step in xarray object.'
-            in caplog.text
-        )
-        assert (
-            '"end_date" not found within input date time range. Defaulting to maximum time step in xarray object.'
-            in caplog.text
-        )
+        assert '"start_date" not found within input date time range. Defaulting to minimum time step in xarray object.' in caplog.text
+        assert '"end_date" not found within input date time range. Defaulting to maximum time step in xarray object.' in caplog.text
 
     def test_warnings(self, caplog, nimbus):
         caplog.set_level("WARNING", logger="clisops")
@@ -72,10 +66,7 @@ class TestSubsetTime:
                 start_date=2050,
                 end_date=2055,
             )
-            assert (
-                'start_date and end_date require dates in (type: str) using formats of "%Y", "%Y-%m" or "%Y-%m-%d".'
-                in caplog.text
-            )
+            assert 'start_date and end_date require dates in (type: str) using formats of "%Y", "%Y-%m" or "%Y-%m-%d".' in caplog.text
 
             subset.subset_time(da, start_date="2064-01-01T00:00:00", end_date="2065-02-01T03:12:01")
 
@@ -173,7 +164,7 @@ class TestSubsetGridPoint:
         np.testing.assert_array_equal(out.time.dt.year.max(), int(yr_ed))
         np.testing.assert_array_equal(out.time.dt.year.min(), int(yr_st))
 
-    @pytest.mark.skipif(not HAS_DASK, reason="Dask required.")
+    @pytest.mark.skipif(not HAS_DASK, reason="dask is required.")
     def test_dataset(self, nimbus):
         da = xr.open_mfdataset(
             [nimbus.fetch(self.nc_tasmax_file), nimbus.fetch(self.nc_tasmin_file)],
@@ -198,7 +189,7 @@ class TestSubsetGridPoint:
         assert ("site" in out.dims) ^ (len(lat) == 1)
         assert ("distance" in out.coords) ^ (not add_distance)
 
-    @pytest.mark.skipif(not HAS_DASK, reason="Dask is required.")
+    @pytest.mark.skipif(not HAS_DASK, reason="dask is required.")
     def test_irregular(self, nimbus):
         da = xr.open_dataset(nimbus.fetch(self.nc_2dlonlat)).tasmax
         lon = -72.4
@@ -316,7 +307,7 @@ class TestSubsetBbox:
     lon_gcm = [-70.0, -60.0]
     lat_gcm = [43.0, 59.0]
 
-    @pytest.mark.skipif(not HAS_DASK, reason="Dask required.")
+    @pytest.mark.skipif(not HAS_DASK, reason="dask is required.")
     def test_dataset(self, nimbus):
         da = xr.open_mfdataset(
             [nimbus.fetch(self.nc_tasmax_file), nimbus.fetch(self.nc_tasmin_file)],
@@ -613,8 +604,7 @@ class TestSubsetBbox:
             )
         assert (
             '"start_yr" and "end_yr" (type: int) are being deprecated. Temporal subsets will soon exclusively'
-            ' support "start_date" and "end_date" (type: str) using formats of "%Y", "%Y-%m" or "%Y-%m-%d".'
-            not in [str(q.message) for q in record]
+            ' support "start_date" and "end_date" (type: str) using formats of "%Y", "%Y-%m" or "%Y-%m-%d".' not in [str(q.message) for q in record]
         )
 
     def test_locstream(self):
@@ -1016,7 +1006,6 @@ class TestGridPolygon:
 
 @pytest.mark.skipif(not HAS_XESMF, reason="xESMF required.")
 class TestShapeBboxIndexer:
-
     def test_rectilinear(self):
         import xesmf
 
@@ -1036,9 +1025,7 @@ class TestShapeBboxIndexer:
         import shapely.wkt
         import xesmf
 
-        p1 = shapely.wkt.loads(
-            "POLYGON((-65.5563 49.257, -64.2166 48.5017, -70.8387 45.2339, -74.6375 44.9993, -65.5563 49.257))"
-        )
+        p1 = shapely.wkt.loads("POLYGON((-65.5563 49.257, -64.2166 48.5017, -70.8387 45.2339, -74.6375 44.9993, -65.5563 49.257))")
         p2 = shapely.wkt.loads(
             "POLYGON ((-58.64 51.2, -78.7115 46.326, -78.1958 62.2551, -64.5341 60.309, -58.64 51.2), "
             "(-78.5687 58.6447, -78.5675 58.646, -78.5762 58.6482, -78.5698 58.6445, -78.5687 58.6447), "
