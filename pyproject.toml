@@ -35,7 +35,7 @@ docs = [
   "ipython >=8.10.0",
   "jupyter_client",
   "nbsphinx >=0.9.8",
-  "sphinx >=8.2.0",
+  "sphinx >=9.0.0",
   "sphinx-codeautolink >=0.16.2",
   "sphinx-copybutton >=0.5.2",
   "sphinx-intl",
@@ -163,7 +163,7 @@ regex = true
 replace = "version: \"{new_version}\""
 
 [[tool.bumpversion.files]]
-filename = "src/clisops_core/__init__.py"
+filename = "src/clisops_core/_version.py"
 search = "__version__ = \"{current_version}\""
 replace = "__version__ = \"{new_version}\""
 

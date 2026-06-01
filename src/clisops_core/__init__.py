@@ -32,6 +32,11 @@
 # OF THE POSSIBILITY OF SUCH DAMAGE.
 ###################################################################################
 
+import warnings
+
+from loguru import logger
+
+from clisops_core._version import __version__ as __version__
 from clisops_core.subset import (
     create_mask,
     subset_bbox,
@@ -45,6 +50,15 @@ from clisops_core.subset import (
 )
 
 
-__author__ = """Trevor James Smith"""
-__email__ = "smith.trevorj@ouranos.ca"
-__version__ = "0.1.0"
+def showwarning(message, *args, **kwargs):  # numpydoc ignore=PR01
+    """Inject warnings from `warnings.warn` into `loguru`."""
+    logger.warning(message)
+    showwarning_(message, *args, **kwargs)
+
+
+showwarning_ = warnings.showwarning
+warnings.showwarning = showwarning
+
+# Disable logging for clisops and remove the logger that is instantiated on import
+logger.disable("clisops_core")
+logger.remove()
