@@ -1,12 +1,9 @@
 """Regrid module."""
 
 from __future__ import annotations
-
 import json
-import os
 import warnings
 from collections import ChainMap, OrderedDict
-from glob import glob
 from hashlib import md5
 from math import sqrt
 from pathlib import Path
@@ -15,17 +12,18 @@ import cf_xarray  # noqa: F401
 import numpy as np
 import roocs_grids
 import xarray as xr
-from packaging.version import Version
+from loguru import logger
 
-from clisops_core.utils import _dataset_utils as clidu
 from clisops_core._version import __version__ as __clisops_version__
+from clisops_core.utils import _dataset_utils as clidu
 from clisops_core.utils._output_utils import FileLock, create_lock, fix_netcdf_attrs_encoding
+from clisops_core.utils.common import require_xarray, require_xesmf, xe
 
 
 def weights_cache_flush(
     weights_dir: str | Path,
-    dryrun: bool | None = False,
-    verbose: bool | None = False,
+    dryrun: bool = False,
+    verbose: bool = False,
 ):
     """
     Flush and reinitialize the local weights cache.
@@ -42,26 +40,26 @@ def weights_cache_flush(
         The default is False.
     """
     if dryrun:
-        print(f"Flushing the clisops weights cache ('{weights_dir}') would remove:")
+        logger.warning(f"Flushing the clisops weights cache ('{weights_dir}') would remove:")
     elif verbose:
-        print(f"Flushing the clisops weights cache ('{weights_dir}'). Removing ...")
+        logger.warning(f"Flushing the clisops weights cache ('{weights_dir}'). Removing ...")
 
     # Find and delete/report weight files, grid files and the json files containing the metadata
-    if os.path.isdir(weights_dir):
-        flist_weights = glob(f"{weights_dir}/weights_{'?' * 32}_{'?' * 32}_*.nc")
-        flist_meta = glob(f"{weights_dir}/weights_{'?' * 32}_{'?' * 32}_*.json")
-        flist_grids = glob(f"{weights_dir}/grid_{'?' * 32}.nc")
-        if flist_weights != [] or flist_grids != [] or flist_meta != []:
+    if Path(weights_dir).is_dir():
+        flist_weights = list(Path(weights_dir).rglob(f"weights_{'?' * 32}_{'?' * 32}_*.nc"))
+        flist_meta = list(Path(weights_dir).rglob(f"weights_{'?' * 32}_{'?' * 32}_*.json"))
+        flist_grids = list(Path(weights_dir).rglob(f"grid_{'?' * 32}.nc"))
+        if flist_weights or flist_grids or flist_meta:
             for f in flist_meta + flist_weights + flist_grids:
                 if dryrun or verbose:
-                    print(f" - {f}")
+                    logger.warning(f" - {f}")
                 if not dryrun:
-                    os.remove(f)
+                    Path(f).unlink()
         else:
             if dryrun or verbose:
-                print("No weight or grid files found. Cache empty?")
+                logger.warning("No weight or grid files found. Cache empty?")
     elif dryrun:
-        print("No weight or grid files found. Cache empty?")
+        logger.warning("No weight or grid files found. Cache empty?")
 
     # Reinitialize local weights cache
     if not dryrun:
@@ -250,11 +248,7 @@ class Grid:
         info = (
             f"clisops {self.__str__()}\n"
             + (f"Lat x Lon:        {self.nlat} x {self.nlon}\n" if self.type != "unstructured" else "")
-            + (
-                f"Average resolution: {self.res}\n"
-                if self.type == "unstructured"
-                else f"Average resolution (x,y): {self.xinc, self.yinc}\n"
-            )
+            + (f"Average resolution: {self.res}\n" if self.type == "unstructured" else f"Average resolution (x,y): {self.xinc, self.yinc}\n")
             + f"Gridcells:        {self.ncells}\n"
             + f"Format:           {self.format}\n"
             + f"Type:             {self.type}\n"
@@ -267,19 +261,14 @@ class Grid:
             + f"Duplicated cells? {self.contains_duplicated_cells}\n"
             + f"Permanent Mask:   {'land sea mask' if self.mask else ''}"
             f"{', ' if self.mask and self.contains_degenerate_cells else ''}"
-            f"{'masked degenerate cells' if self.contains_degenerate_cells else ''}\n"
-            + f"md5 hash:         {self.hash}"
+            f"{'masked degenerate cells' if self.contains_degenerate_cells else ''}\n" + f"md5 hash:         {self.hash}"
         )
         return info
 
     def _get_title(self) -> str:
         """Generate a title for the Grid with more information than the basic string representation."""
         if self.source.startswith("Predefined_"):
-            return ".".join(
-                ga
-                for ga in roocs_grids.grid_annotations[self.source.replace("Predefined_", "")].split(".")
-                if "land-sea mask" not in ga
-            )
+            return ".".join(ga for ga in roocs_grids.grid_annotations[self.source.replace("Predefined_", "")].split(".") if "land-sea mask" not in ga)
         else:
             if self.type != "unstructured":
                 return f"{self.extent} {self.type} {self.nlat}x{self.nlon} ({self.ncells} cells) grid."
@@ -357,9 +346,7 @@ class Grid:
             grid_tmp.ds, low, high = clidu.cf_convert_between_lon_frames(grid_tmp.ds, [-180.0, 180.0], force=True)
             xfirst = float(grid_tmp.ds[grid_tmp.lon].min())
             xlast = float(grid_tmp.ds[grid_tmp.lon].max())
-        elif (
-            grid_tmp.extent_lon == "regional" and xfirst < -180 + 2 * grid_tmp.xinc and xlast > 180 - 2 * grid_tmp.xinc
-        ):
+        elif grid_tmp.extent_lon == "regional" and xfirst < -180 + 2 * grid_tmp.xinc and xlast > 180 - 2 * grid_tmp.xinc:
             # grid_tmp.ds = grid_tmp.ds.assign_coords(
             #    lon=grid_tmp.ds.lon.where(grid_tmp.ds.lon >= -180, grid_tmp.ds.lon + 360.0)
             # )
@@ -442,8 +429,8 @@ class Grid:
         """
         Interpolate to cell center from cell edges, rotate vector variables in lat/lon direction.
 
-        Warnings
-        --------
+        Notes
+        -----
         This method is not yet implemented.
         """
         # TODO
@@ -514,9 +501,7 @@ class Grid:
                 maskvar = "sftlf"
             elif "lsm" in self.ds:
                 maskvar = "lsm"
-            reduce_dims = [
-                d for d in self.ds[maskvar].dims if d not in self.ds[self.lat].dims and d not in self.ds[self.lon].dims
-            ]
+            reduce_dims = [d for d in self.ds[maskvar].dims if d not in self.ds[self.lat].dims and d not in self.ds[self.lon].dims]
             if any([self.ds.sizes[d] > 1 for d in reduce_dims]):
                 warnings.warn("Cannot apply a mask with more than 2 dimensions (lat, lon).", stacklevel=2)
                 return False
@@ -589,9 +574,7 @@ class Grid:
         # TODO: support Units "rad" next to "degree ..."
 
         # Determine min/max lon/lat values and potentially fix unmasked missing_values
-        xfirst, xlast, yfirst, ylast = clidu.determine_lon_lat_range(
-            self.ds, self.lon, self.lat, self.lon_bnds, self.lat_bnds, apply_fix=True
-        )
+        xfirst, xlast, yfirst, ylast = clidu.determine_lon_lat_range(self.ds, self.lon, self.lat, self.lon_bnds, self.lat_bnds, apply_fix=True)
 
         # Perform roll to [-180, 180] if necessary
         if xlast > 360 or xfirst < -180 or abs(xlast - xfirst) > 360 or (xlast > 180 and xfirst < 0):
@@ -599,9 +582,7 @@ class Grid:
             self.ds, _low, _high = clidu.cf_convert_between_lon_frames(self.ds, [-180.0, 180.0], force=True)
 
         # Determine min/max lon/lat values after potential conversions/fixes
-        xfirst, xlast, yfirst, ylast = clidu.determine_lon_lat_range(
-            self.ds, self.lon, self.lat, self.lon_bnds, self.lat_bnds, apply_fix=False
-        )
+        xfirst, xlast, yfirst, ylast = clidu.determine_lon_lat_range(self.ds, self.lon, self.lat, self.lon_bnds, self.lat_bnds, apply_fix=False)
 
         # Approximate the grid resolution
         if self.ds[self.lon].ndim == 2 and self.ds[self.lat].ndim == 2:
@@ -637,9 +618,7 @@ class Grid:
         elif lon_min > -atol and lon_max < 360.0 + atol:
             min_range, max_range = (0.0, 360.0)
         elif np.isclose(lon_min, lon_max):
-            raise ValueError(
-                "Remapping zonal mean datasets or generally datasets without meridional extent is not supported."
-            )
+            raise ValueError("Remapping zonal mean datasets or generally datasets without meridional extent is not supported.")
         else:
             raise ValueError("The longitude values have to be within the range (-180, 360).")
 
@@ -674,10 +653,9 @@ class Grid:
         """
         Detect mask helper function.
 
-        Warning
-        -------
+        Notes
+        -----
         Not yet implemented, if at all necessary (e.g. for reformatting to SCRIP etc.).
-
         """
         # TODO
         # Plan:
@@ -740,9 +718,7 @@ class Grid:
             for match in further_matches:
                 for attr in ["standard_name", "units", "long_name"]:
                     if attr in self.ds[match].attrs:
-                        warnings.warn(
-                            f"Removing attribute '{attr}' from variable '{match}' as it is likely not CF compliant."
-                        )
+                        warnings.warn(f"Removing attribute '{attr}' from variable '{match}' as it is likely not CF compliant.", stacklevel=2)
                         self.ds[match].attrs.pop(attr)
 
         # Return the name of the coordinate variable
@@ -800,8 +776,7 @@ class Grid:
                 # If indeed the bounds were the issue, raise a warning and drop them
                 if gtype:
                     warnings.warn(
-                        "Latitude and longitude bounds definition is invalid. The bounds will be dropped and potentially recomputed.",
-                        stacklevel=2
+                        "Latitude and longitude bounds definition is invalid. The bounds will be dropped and potentially recomputed.", stacklevel=2
                     )
                     self.ds = self.ds.drop_vars([lat_bnds, lon_bnds])
                     if "bounds" in self.ds[self.lat].attrs:
@@ -845,18 +820,10 @@ class Grid:
             )
 
             # Mask degenerated cells and specify if there are any in the dataset
-            self.coll_mask = (
-                self._create_collapse_mask(dsll, "lat_vertices", "lon_vertices")
-                .rename("coll_mask")
-                .reset_coords(drop=True)
-            )
+            self.coll_mask = self._create_collapse_mask(dsll, "lat_vertices", "lon_vertices").rename("coll_mask").reset_coords(drop=True)
         else:
             # Mask degenerated cells and specify if there are any in the dataset
-            self.coll_mask = (
-                self._create_collapse_mask(self.ds, self.lat_bnds, self.lon_bnds)
-                .rename("coll_mask")
-                .reset_coords(drop=True)
-            )
+            self.coll_mask = self._create_collapse_mask(self.ds, self.lat_bnds, self.lon_bnds).rename("coll_mask").reset_coords(drop=True)
 
         self.contains_collapsed_cells = bool(np.any(self.coll_mask == 0))
 
@@ -896,18 +863,10 @@ class Grid:
             )
 
             # Mask degenerated cells and specify if there are any in the dataset
-            self.smash_mask = (
-                self._create_smashed_mask(dsll, "lat_vertices", "lon_vertices")
-                .rename("smash_mask")
-                .reset_coords(drop=True)
-            )
+            self.smash_mask = self._create_smashed_mask(dsll, "lat_vertices", "lon_vertices").rename("smash_mask").reset_coords(drop=True)
         else:
             # Mask degenerated cells and specify if there are any in the dataset
-            self.smash_mask = (
-                self._create_smashed_mask(self.ds, self.lat_bnds, self.lon_bnds)
-                .rename("smash_mask")
-                .reset_coords(drop=True)
-            )
+            self.smash_mask = self._create_smashed_mask(self.ds, self.lat_bnds, self.lon_bnds).rename("smash_mask").reset_coords(drop=True)
 
         self.contains_smashed_cells = bool(np.any(self.smash_mask == 0))
 
@@ -991,13 +950,10 @@ class Grid:
                 "coord",
             )
         elif len(ds[lat_bnds].dims) == 2:
-            lat_lon_bnds = xr.concat([ds[lat_bnds], ds[lon_bnds]], dim="coord").transpose(
-                ds[lat_bnds].dims[0], ds[lat_bnds].dims[1], "coord"
-            )
+            lat_lon_bnds = xr.concat([ds[lat_bnds], ds[lon_bnds]], dim="coord").transpose(ds[lat_bnds].dims[0], ds[lat_bnds].dims[1], "coord")
         else:
             raise ValueError(
-                "Vertices should have two dimensions (unstructured: [ncells x ncorners]) "
-                "or three dimensions (else: [nlat x nlon x ncorners])"
+                "Vertices should have two dimensions (unstructured: [ncells x ncorners]) or three dimensions (else: [nlat x nlon x ncorners])"
             )
 
         # Apply the function across the nlat and nlon dimensions
@@ -1047,13 +1003,10 @@ class Grid:
                 "coord",
             )
         elif len(ds[lat_bnds].dims) == 2:
-            lat_lon_bnds = xr.concat([ds[lat_bnds], ds[lon_bnds]], dim="coord").transpose(
-                ds[lat_bnds].dims[0], ds[lat_bnds].dims[1], "coord"
-            )
+            lat_lon_bnds = xr.concat([ds[lat_bnds], ds[lon_bnds]], dim="coord").transpose(ds[lat_bnds].dims[0], ds[lat_bnds].dims[1], "coord")
         else:
             raise ValueError(
-                "Vertices should have two dimensions (unstructured: [ncells x ncorners]) "
-                "or three dimensions (else: [nlat x nlon x ncorners])"
+                "Vertices should have two dimensions (unstructured: [ncells x ncorners]) or three dimensions (else: [nlat x nlon x ncorners])"
             )
 
         # Apply the function across the nlat and nlon dimensions
@@ -1137,12 +1090,12 @@ class Grid:
             ]
         ).items():
             if coord_var:
-                self.hash_dict[coord] = md5(str(self.ds[coord_var].values.tobytes()).encode("utf-8")).hexdigest()
+                self.hash_dict[coord] = md5(str(self.ds[coord_var].values.tobytes()).encode("utf-8")).hexdigest()  # noqa: S324
             else:
-                self.hash_dict[coord] = md5(b"undefined").hexdigest()
+                self.hash_dict[coord] = md5(b"undefined").hexdigest()  # noqa: S324
 
         # Return overall checksum for all 5 parts
-        return md5("".join(self.hash_dict.values()).encode("utf-8")).hexdigest()
+        return md5("".join(self.hash_dict.values()).encode("utf-8")).hexdigest()  # noqa: S324
 
     def compare_grid(self, ds_or_grid: xr.Dataset | Grid, verbose: bool = False) -> bool:
         """
@@ -1169,16 +1122,11 @@ class Grid:
         elif isinstance(ds_or_grid, Grid):
             grid_tmp = ds_or_grid
         else:
-            raise ValueError(
-                "The provided input has to be of one of the types "
-                "[xarray.DataArray, xarray.Dataset, clisops.core.Grid]."
-            )
+            raise ValueError("The provided input has to be of one of the types [xarray.DataArray, xarray.Dataset, clisops.core.Grid].")
 
         # Compare each of the five components and print result if verbose is active
         if verbose:
-            diff = [
-                coord_var for coord_var in self.hash_dict if self.hash_dict[coord_var] != grid_tmp.hash_dict[coord_var]
-            ]
+            diff = [coord_var for coord_var in self.hash_dict if self.hash_dict[coord_var] != grid_tmp.hash_dict[coord_var]]
             if len(diff) > 0:
                 print(f"The two grids differ in their respective {', '.join(diff)}.")
             else:
@@ -1229,14 +1177,8 @@ class Grid:
             cattr = ChainMap(source_grid.ds[var].attrs, source_grid.ds[var].encoding).get("coordinates", "")
             if cattr:
                 coordinates_attr += cattr.split()
-        to_skip = [
-            var for var in list(source_grid.ds.coords) if source_grid.ds[var].ndim == 0 and var not in coordinates_attr
-        ]
-        to_transfer = [
-            var
-            for var in list(source_grid.ds.coords)
-            if all([dim not in source_grid.ds[var].dims for dim in dims_to_skip])
-        ]
+        to_skip = [var for var in list(source_grid.ds.coords) if source_grid.ds[var].ndim == 0 and var not in coordinates_attr]
+        to_transfer = [var for var in list(source_grid.ds.coords) if all([dim not in source_grid.ds[var].dims for dim in dims_to_skip])]
         coord_dict = {}
         for coord in to_transfer:
             if coord not in to_skip:
@@ -1274,7 +1216,7 @@ class Grid:
 
         # Also add cell_measure variables
         cell_measures = list()
-        for _cmtype, cm in self.ds.cf.cell_measures.items():
+        for cm in self.ds.cf.cell_measures.values():
             cell_measures += cm
 
         # Set as coord for auxiliary coord. variables not supposed to be remapped
@@ -1300,16 +1242,13 @@ class Grid:
                     if len(self.ds[var].shape) > 0 and (self.ds[var].shape[-1],) != self.ds[self.lat].shape:
                         to_coord.append(var)
                 else:
-                    if not (
-                        self.ds[var].shape[-2:] == (self.nlat, self.nlon)
-                        or self.ds[var].shape[-2:] == (self.nlon, self.nlat)
-                    ):
+                    if not (self.ds[var].shape[-2:] == (self.nlat, self.nlon) or self.ds[var].shape[-2:] == (self.nlon, self.nlat)):
                         to_coord.append(var)
 
         # Set coordinate bounds as coords
         for var in [bnd for bnds in self.ds.cf.bounds.values() for bnd in bnds]:
             if var in self.ds.data_vars:
-                to_coord.append(var)
+                to_coord.extend(var)
 
         # Reset coords for variables supposed to be remapped (eg. ps)
         for var in self.ds.coords:
@@ -1320,24 +1259,14 @@ class Grid:
                     to_datavar.append(var)
                 elif self.type == "unstructured":
                     if len(self.ds[var].shape) > 0 and (
-                        self.ds[var].shape[-1] == self.ncells
-                        and self.ds[var].dims[-1] in self.ds[self.lat].dims
-                        and var not in self.ds.dims
+                        self.ds[var].shape[-1] == self.ncells and self.ds[var].dims[-1] in self.ds[self.lat].dims and var not in self.ds.dims
                     ):
                         to_datavar.append(var)
                 else:
                     if (
                         len(self.ds[var].shape) > 0
-                        and (
-                            self.ds[var].shape[-2:] == (self.nlat, self.nlon)
-                            or self.ds[var].shape[-2:] == (self.nlon, self.nlat)
-                        )
-                        and all(
-                            [
-                                dim in self.ds[var].dims
-                                for dim in list(self.ds[self.lat].dims) + list(self.ds[self.lon].dims)
-                            ]
-                        )
+                        and (self.ds[var].shape[-2:] == (self.nlat, self.nlon) or self.ds[var].shape[-2:] == (self.nlon, self.nlat))
+                        and all([dim in self.ds[var].dims for dim in list(self.ds[self.lat].dims) + list(self.ds[self.lon].dims)])
                     ):
                         to_datavar.append(var)
 
@@ -1359,17 +1288,13 @@ class Grid:
 
         # Warn about duplicated cell centers possibly affecting the quality of the calculated bounds
         if self.contains_duplicated_cells:
-            warnings.warn(
-                "This grid contains duplicated cell centers, which may affect the quality of the calculated bounds.",
-                stacklevel=2
-            )
+            warnings.warn("This grid contains duplicated cell centers, which may affect the quality of the calculated bounds.", stacklevel=2)
 
         # Bounds are only possible for xarray.Datasets
         if not isinstance(self.ds, xr.Dataset):
             raise ValueError("Bounds can only be attached to xarray.Datasets, not to xarray.DataArrays.")
         if np.amin(self.ds[self.lat].values) < -90.0 or np.amax(self.ds[self.lat].values) > 90.0:
-            warnings.warn("At least one latitude value exceeds [-90,90]. Latitude bounds will be clipped to [-90,90].",
-            stacklevel=2)
+            warnings.warn("At least one latitude value exceeds [-90,90]. Latitude bounds will be clipped to [-90,90].", stacklevel=2)
             return
         if self.nlat < 3 or self.nlon < 3:
             warnings.warn("The latitude and longitude axes need at least 3 entries to be able to calculate the bounds.", stacklevel=2)
@@ -1388,9 +1313,7 @@ class Grid:
                 self.ds = clidu.generate_bounds_rectilinear(ds=self.ds, lat=self.lat, lon=self.lon)
                 lat_bnds, lon_bnds = "lat_bnds", "lon_bnds"
             else:
-                warnings.warn(
-                    f"The bounds cannot be calculated for grid_type '{self.type}' and format '{self.format}'.", stacklevel=2
-                )
+                warnings.warn(f"The bounds cannot be calculated for grid_type '{self.type}' and format '{self.format}'.", stacklevel=2)
                 return
 
             # Add common set of attributes and set as coordinates
@@ -1411,7 +1334,7 @@ class Grid:
             warnings.warn(
                 "Successfully calculated a set of latitude and longitude bounds. "
                 "They might, however, differ from the actual bounds of the model grid.",
-                stacklevel=2
+                stacklevel=2,
             )
         else:
             warnings.warn(f"The bounds cannot be calculated for grid_type '{self.type}' and format '{self.format}'.", stacklevel=2)
@@ -1472,10 +1395,7 @@ class Grid:
                 else:
                     locked = False
             if locked:
-                warnings.warn(
-                    f"Could not write grid '{filename}' to cache because a lockfile of another process exists.",
-                    stacklevel=2
-                )
+                warnings.warn(f"Could not write grid '{filename}' to cache because a lockfile of another process exists.", stacklevel=2)
             else:
                 try:
                     # Create a copy of the Grid object with just the horizontal grid information
@@ -1503,9 +1423,7 @@ class Grid:
                     # There is currently also an issue that xarray.Dataset.encoding['unlimited_dims']
                     #   is not updated when dropping the time dimension from the dataset
                     if "unlimited_dims" in grid_tmp.ds.encoding:
-                        grid_tmp.ds.encoding["unlimited_dims"] = {
-                            dim for dim in grid_tmp.ds.encoding["unlimited_dims"] if dim in grid_tmp.ds.dims
-                        }
+                        grid_tmp.ds.encoding["unlimited_dims"] = {dim for dim in grid_tmp.ds.encoding["unlimited_dims"] if dim in grid_tmp.ds.dims}
                     grid_tmp.ds.to_netcdf(filename, **engine_kwargs)
                 finally:
                     lock_obj.release()
@@ -1577,9 +1495,7 @@ class Weights:
             # TODO: check if this is proper behaviour of xesmf
             if self.method not in ["conservative", "conservative_normed"]:
                 warnings.warn(
-                    "The grid extent could not be accessed. "
-                    "It will be assumed that the input grid is not periodic in longitude.",
-                    stacklevel=2
+                    "The grid extent could not be accessed. It will be assumed that the input grid is not periodic in longitude.", stacklevel=2
                 )
 
         # Regional source grid fix for nearest neighbour
@@ -1617,14 +1533,9 @@ class Weights:
 
         # Check if bounds are present in case of conservative remapping
         if self.method in ["conservative", "conservative_normed"] and (
-            not self.grid_in.lat_bnds
-            or not self.grid_in.lon_bnds
-            or not self.grid_out.lat_bnds
-            or not self.grid_out.lon_bnds
+            not self.grid_in.lat_bnds or not self.grid_in.lon_bnds or not self.grid_out.lat_bnds or not self.grid_out.lon_bnds
         ):
-            raise Exception(
-                "For conservative remapping, horizontal grid bounds have to be defined for the source and target grids."
-            )
+            raise Exception("For conservative remapping, horizontal grid bounds have to be defined for the source and target grids.")
 
         # Use "Locstream" functionality of xESMF as workaround for unstructured grids.
         #  Yet, the locstream functionality only supports the nearest neighbour remapping method
@@ -1635,10 +1546,7 @@ class Weights:
         if self.grid_out.type == "unstructured":
             locstream_out = True
         if any([locstream_in, locstream_out]) and self.method != "nearest_s2d":
-            raise NotImplementedError(
-                "For unstructured grids, the only supported remapping method that is currently supported "
-                "is nearest neighbour."
-            )
+            raise NotImplementedError("For unstructured grids, the only supported remapping method that is currently supported is nearest neighbour.")
 
         # Read weights from cache (= reuse weights) if they are not currently written
         #  to the cache by another process
@@ -1649,9 +1557,8 @@ class Weights:
         lock_obj = create_lock(Path(weights_dir, self.filename + ".lock").as_posix())
         if not lock_obj:
             warnings.warn(
-                f"Could not reuse cached weights '{self.filename}' because a "
-                "lockfile of another process exists that is writing to that file.",
-                stacklevel=2
+                f"Could not reuse cached weights '{self.filename}' because a lockfile of another process exists that is writing to that file.",
+                stacklevel=2,
             )
             reuse_weights = False
             regridder_filename = None
@@ -1792,10 +1699,7 @@ class Weights:
             if not Path(weights_dir, self.filename).is_file():
                 self.regridder.to_netcdf(Path(weights_dir, self.filename).as_posix())
             if not Path(weights_dir, Path(self.filename).stem + ".json").is_file():
-                with open(
-                    Path(weights_dir, Path(self.filename).stem + ".json").as_posix(),
-                    "w",
-                ) as weights_dic_path:
+                with Path(Path(weights_dir, Path(self.filename).stem + ".json").as_posix()).open("w") as weights_dic_path:
                     json.dump(weights_dic, weights_dic_path, sort_keys=True, indent=4)
 
     @check_weights_dir
@@ -1834,8 +1738,8 @@ class Weights:
         """
         Read and process weights from disk.
 
-        Warning
-        -------
+        Notes
+        -----
         This method is not yet implemented.
         """
         # TODO: Reformat to other weight-file formats when loading/saving from disk
@@ -1849,8 +1753,8 @@ class Weights:
         """
         Reformat remapping weights.
 
-        Warnings
-        --------
+        Notes
+        -----
         This method is not yet implemented.
         """
         raise NotImplementedError()
@@ -1859,8 +1763,8 @@ class Weights:
         """
         Detect format of remapping weights (read from disk).
 
-        Warning
-        -------
+        Notes
+        -----
         This method is not yet implemented.
         """
         raise NotImplementedError()
@@ -1908,9 +1812,7 @@ def regrid(
         The regridded data in form of an xarray.Dataset.
     """
     if not isinstance(grid_out.ds, xr.Dataset):
-        raise ValueError(
-            "The target Grid object 'grid_out' has to be built from an xarray.Dataset and not an xarray.DataArray."
-        )
+        raise ValueError("The target Grid object 'grid_out' has to be built from an xarray.Dataset and not an xarray.DataArray.")
 
     # Duplicated cells / Halo
     if grid_in.contains_duplicated_cells:
@@ -1921,7 +1823,7 @@ def regrid(
             "which is in most parts counter-acted by the applied re-normalization. "
             "However, please be wary with the results and consider removing / masking "
             "the duplicated cells before remapping.",
-            stacklevel=2
+            stacklevel=2,
         )
 
     # Create attrs
@@ -1953,12 +1855,7 @@ def regrid(
     # Allow Dataset and DataArray as input, but always return a Dataset
     if isinstance(grid_in.ds, xr.Dataset):
         for data_var in grid_in.ds.data_vars:
-            if not all(
-                [
-                    dim in grid_in.ds[data_var].dims
-                    for dim in grid_in.ds[grid_in.lat].dims + grid_in.ds[grid_in.lon].dims
-                ]
-            ):
+            if not all([dim in grid_in.ds[data_var].dims for dim in grid_in.ds[grid_in.lat].dims + grid_in.ds[grid_in.lon].dims]):
                 continue
             if weights.regridder.method in [
                 "conservative",
@@ -1966,9 +1863,7 @@ def regrid(
                 "patch",
             ]:
                 # Re-normalize at least contributions from duplicated cells, if adaptive masking is deactivated
-                if (
-                    adaptive_masking_threshold < 0 or adaptive_masking_threshold > 1
-                ) and grid_in.contains_duplicated_cells:
+                if (adaptive_masking_threshold < 0 or adaptive_masking_threshold > 1) and grid_in.contains_duplicated_cells:
                     adaptive_masking_threshold = 0.0
                 grid_out.ds[data_var] = weights.regridder(
                     grid_in.ds[data_var],
@@ -1985,13 +1880,8 @@ def regrid(
         grid_out._transfer_coords(grid_in, keep_attrs=keep_attrs)
 
     else:
-        if (
-            weights.regridder.method in ["conservative", "conservative_normed", "patch"]
-            and 0.0 <= adaptive_masking_threshold <= 1.0
-        ):
-            grid_out.ds[grid_in.ds.name] = weights.regridder(
-                grid_in.ds, skipna=True, na_thres=adaptive_masking_threshold
-            )
+        if weights.regridder.method in ["conservative", "conservative_normed", "patch"] and 0.0 <= adaptive_masking_threshold <= 1.0:
+            grid_out.ds[grid_in.ds.name] = weights.regridder(grid_in.ds, skipna=True, na_thres=adaptive_masking_threshold)
         else:
             grid_out.ds[grid_in.ds.name] = weights.regridder(grid_in.ds, skipna=False)
         if keep_attrs:
