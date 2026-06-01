@@ -22,7 +22,8 @@ from shapely.ops import split, unary_union
 from xarray.core import indexing
 from xarray.core.utils import get_temp_dimname
 
-from .utils import adjust_date_to_calendar, get_coord_by_type, to_isoformat
+from clisops_core.utils import adjust_date_to_calendar, get_coord_by_type, to_isoformat
+from clisops_core.utils.common import XESMF_MINIMUM_VERSION
 
 
 __all__ = [
@@ -642,6 +643,77 @@ def create_mask(
     return mask
 
 
+def create_weight_masks(
+    ds_in: xarray.DataArray | xarray.Dataset,
+    poly: gpd.GeoDataFrame,
+) -> xarray.DataArray:
+    """
+    Create weight masks corresponding to the features in a GeoDataFrame using xESMF.
+
+    The returned masks values are the fraction of the corresponding polygon's area
+    that is covered by the grid cell. Summing along the spatial dimension will give 1
+    for each geometry. Requires xESMF.
+
+    Parameters
+    ----------
+    ds_in : xarray.DataArray or xarray.Dataset
+        An xarray object containing the grid information, as understood by xESMF.
+        For 2D lat/lon coordinates, the bounded arrays are required.
+    poly : gpd.GeoDataFrame
+        GeoDataFrame used to create the xarray.DataArray mask.
+        One mask will be created for each row in the dataframe.
+        Will be converted to EPSG:4326 if needed.
+
+    Returns
+    -------
+    xarray.DataArray
+        Has a new `geom` dimension corresponding to the index of the input GeoDataframe.
+        Non-geometry columns of `poly` are copied as auxiliary coordinates.
+
+    Examples
+    --------
+    .. code-block:: python
+
+        import geopandas as gpd
+        import xarray as xr
+
+        from clisops.core.subset import create_weight_masks
+
+        ds = xr.open_dataset(path_to_tasmin_file)
+        polys = gpd.read_file(path_to_multi_shape_file)
+
+        # Get a weight mask for each polygon in the shape file
+        mask = create_weight_masks(x_dim=ds.lon, y_dim=ds.lat, poly=polys)
+    """
+    try:
+        from xesmf import SpatialAverager
+    except ImportError as err:
+        raise ImportError(f"Package xesmf >= {XESMF_MINIMUM_VERSION} is required to use create_weight_masks.") from err
+
+    if poly.crs is not None:
+        poly = poly.set_crs(4326)
+
+    poly = poly.copy()
+    poly.index.name = "geom"
+    poly_coords = poly.drop("geometry", axis="columns").to_xarray()
+
+    savg = SpatialAverager(ds_in, poly.geometry)
+    # Unpack weights to full size array, this increases memory use a lot.
+    # polygons are along the "geom" dim
+    # assign all other columns of poly as auxiliary coords.
+    weights = savg.weights.data.todense() if isinstance(savg.weights, xarray.DataArray) else savg.weights.toarray()
+    masks = xarray.DataArray(
+        weights.reshape(poly.geometry.size, *savg.shape_in),
+        dims=("geom", *savg.in_horiz_dims),
+        coords=dict(**poly_coords, **poly_coords.coords),
+    )
+
+    # Assign coords from ds_in, but only those with no unknown dimensions.
+    # Otherwise, xarray raises an error.
+    masks = masks.assign_coords(**{k: crd for k, crd in ds_in.coords.items() if not (set(crd.dims) - set(masks.dims))})
+    return masks
+
+
 def _rectilinear_grid_exterior_polygon(ds: xarray.Dataset) -> Polygon:
     """
     Return a polygon tracing a rectilinear grid's exterior.
@@ -761,7 +833,7 @@ def _curvilinear_grid_exterior_polygon(ds: xarray.Dataset, mode: str = "bbox") -
                 x = ds.cf.coordinates["longitude"]
                 y = ds.cf.coordinates["latitude"]
 
-        xmin = (x.min(),)
+        xmin = _round_down(x.min())
         xmax = _round_up(x.max())
         ymin = _round_down(y.min())
         ymax = _round_up(y.max())
@@ -796,7 +868,7 @@ def _curvilinear_grid_exterior_polygon(ds: xarray.Dataset, mode: str = "bbox") -
         y = np.clip(y, -90, 90)
         pts = zip(x, y, strict=False)
     else:
-        raise NotImplementedError(f"mode: {mode}")
+        raise NotImplementedError(f"Mode: {mode}")
 
     return Polygon(pts)
 
