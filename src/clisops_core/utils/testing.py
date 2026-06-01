@@ -1,10 +1,11 @@
-"""Testing support"""
+"""Testing support."""
 
 import importlib.resources as ilr
 import os
 from pathlib import Path
 from shutil import copytree
 from sys import platform
+from typing import Any
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlparse
 from urllib.request import urlretrieve
@@ -44,8 +45,15 @@ class ContextLogger:
         The pytest caplog fixture, if provided, to capture logs during tests.
     """
 
-    def __init__(self, caplog=False):
-        """Initialize the ContextLogger."""
+    def __init__(self, caplog: Any | None = None):
+        """
+        Initialize the ContextLogger.
+
+        Parameters
+        ----------
+        caplog : Any
+            If using specific caplog, pytest will manage the teardown.
+        """
         from loguru import logger
 
         self.logger = logger
@@ -53,13 +61,25 @@ class ContextLogger:
         if caplog:
             self.using_caplog = True
 
-    def __enter__(self, package_name: str = "clisops"):
-        """If test is supplying caplog, pytest will manage setup."""
+    def __enter__(self, package_name: str = "clisops_core"):
+        """
+        If test is supplying caplog, pytest will manage setup.
+
+        Parameters
+        ----------
+        package_name : str
+            The name of the main package.
+
+        Returns
+        -------
+        ContextLogger
+            Contextual loguru logging context.
+        """
         self.logger.enable(package_name)
         self._package = package_name
         return self.logger
 
-    def __exit__(self, *args, **kwargs):
+    def __exit__(self, *args, **kwargs):  # numpydoc ignore=PR01
         """If test is supplying caplog, pytest will manage teardown."""
         self.logger.disable(self._package)
         if not self.using_caplog:
@@ -90,10 +110,7 @@ def load_registry(branch: str, repo: str) -> dict[str, str]:
         default_testdata_version = XCLIM_TEST_DATA_VERSION
         default_testdata_repo_url = XCLIM_TEST_DATA_REPO_URL
     else:
-        raise ValueError(
-            f"Repository URL {repo} not recognized. "
-            f"Please set {XCLIM_TEST_DATA_REPO_URL}"
-        )
+        raise ValueError(f"Repository URL {repo} not recognized. Please set {XCLIM_TEST_DATA_REPO_URL}")
 
     remote_registry = audit_url(f"{repo}{branch}/data/{project}_registry.txt")
     if branch != default_testdata_version:
@@ -163,10 +180,7 @@ def stratus(
         _version = XCLIM_TEST_DATA_VERSION
         _default_version = default_xclim_test_data_version
     else:
-        raise ValueError(
-            f"Repository URL {repo} not recognized. "
-            f"Please set {XCLIM_TEST_DATA_REPO_URL}"
-        )
+        raise ValueError(f"Repository URL {repo} not recognized. Please set {XCLIM_TEST_DATA_REPO_URL}")
 
     remote = audit_url(f"{repo}/{branch}/data")
     return pooch.create(
@@ -253,10 +267,7 @@ def gather_testing_data(
     if repo.endswith("xclim-testdata"):
         version = default_xclim_test_data_version
     else:
-        raise ValueError(
-            f"Repository URL {repo} not recognized. "
-            f"Please set {XCLIM_TEST_DATA_REPO_URL}"
-        )
+        raise ValueError(f"Repository URL {repo} not recognized. Please set {XCLIM_TEST_DATA_REPO_URL}")
 
     if worker_id == "master":
         populate_testing_data(branch=branch, repo=repo, cache_dir=cache_dir)
