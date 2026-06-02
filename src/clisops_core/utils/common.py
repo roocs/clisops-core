@@ -1,12 +1,13 @@
+"""Common utilities for CLISOPS-core."""
+
 import functools
 import sys
 import warnings
 from collections.abc import Callable
 from types import FunctionType, ModuleType
 
-from loguru import logger
-
 import xarray as xr
+from loguru import logger
 from packaging.version import Version
 
 
@@ -32,6 +33,7 @@ XARRAY_WARNING_MESSAGE = (
     f"Please use xarray version >= {XARRAY_COMPATIBLE_VERSION}. "
     "For more information, see: https://github.com/pydata/xarray/issues/7794."
 )
+
 
 def _logging_examples() -> None:
     """Testing module."""
@@ -66,9 +68,7 @@ def enable_logging() -> list[int]:
             },
             {
                 "sink": sys.stderr,
-                "format": "<red>"
-                "{time:YYYY-MM-DD HH:mm:ss.SSS Z UTC} | {level} | {name}:{function}:{line} | {message}"
-                "</>",
+                "format": "<red>{time:YYYY-MM-DD HH:mm:ss.SSS Z UTC} | {level} | {name}:{function}:{line} | {message}</>",
                 "level": "WARNING",
             },
         ]
