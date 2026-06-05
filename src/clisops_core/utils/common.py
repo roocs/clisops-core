@@ -5,34 +5,10 @@ import sys
 import warnings
 from collections.abc import Callable
 from types import FunctionType, ModuleType
+from typing import Any
 
-import xarray as xr
 from loguru import logger
 from packaging.version import Version
-
-
-# Try importing xesmf and set to None if not found at correct version
-# If set to None, the `require_module` decorator will throw an exception
-XESMF_MINIMUM_VERSION = "0.8.10"
-try:
-    import xesmf as xe
-
-    if Version(xe.__version__) < Version(XESMF_MINIMUM_VERSION):
-        msg = f"xESMF >= {XESMF_MINIMUM_VERSION} is required to use the regridding operations."
-        warnings.warn(msg, stacklevel=2)
-        raise ValueError(msg)
-except (ModuleNotFoundError, ValueError):
-    xe = None
-
-# FIXME: Remove this when xarray addresses https://github.com/pydata/xarray/issues/7794
-XARRAY_INCOMPATIBLE_VERSION = "2023.3.0"
-XARRAY_COMPATIBLE_VERSION = "2025.6.0"
-XARRAY_WARNING_MESSAGE = (
-    f"xarray versions between {XARRAY_INCOMPATIBLE_VERSION} and {XARRAY_COMPATIBLE_VERSION} "
-    f"are not supported for regridding operations with cf-time indexed arrays. "
-    f"Please use xarray version >= {XARRAY_COMPATIBLE_VERSION}. "
-    "For more information, see: https://github.com/pydata/xarray/issues/7794."
-)
 
 
 def _logging_examples() -> None:
@@ -57,7 +33,7 @@ def enable_logging() -> list[int]:
     """
     logger.enable("clisops")
 
-    config = {
+    config: dict[str, Any] = {
         "handlers": [
             {
                 "sink": sys.stdout,
@@ -121,8 +97,9 @@ def require_module(
     @functools.wraps(func)
     def wrapper_func(*args, **kwargs):  # numpydoc ignore=GL08
         exception_msg = f"Package {module_name} >= {min_version} is required to use {func}."
-        if Version(module.__version__) < Version(min_version):
-            raise ImportError(exception_msg)
+        if min_version is not None:
+            if Version(module.__version__) < Version(min_version):
+                raise ImportError(exception_msg)
 
         if max_supported_version is not None:
             if Version(module.__version__) > Version(max_supported_version):
@@ -143,21 +120,9 @@ def require_module(
             if Version(module.__version__) >= Version(unsupported_version_range[0]) and Version(module.__version__) < Version(
                 unsupported_version_range[1]
             ):
-                warnings.warn(max_supported_warning, stacklevel=2)
+                if max_supported_warning:
+                    warnings.warn(max_supported_warning, stacklevel=2)
 
         return func(*args, **kwargs)
 
     return wrapper_func
-
-
-# Check if xESMF module is imported - decorator, used below
-require_xesmf = functools.partial(require_module, module=xe, module_name="xESMF", min_version=XESMF_MINIMUM_VERSION)
-
-# Check if xarray version is compatible - decorator, used below
-require_xarray = functools.partial(
-    require_module,
-    module=xr,
-    module_name="xarray",
-    unsupported_version_range=[XARRAY_INCOMPATIBLE_VERSION, XARRAY_COMPATIBLE_VERSION],
-    max_supported_warning=XARRAY_WARNING_MESSAGE,
-)
