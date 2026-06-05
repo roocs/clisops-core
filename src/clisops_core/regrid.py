@@ -12,6 +12,7 @@ import cf_xarray  # noqa: F401
 import numpy as np
 import roocs_grids
 import xarray as xr
+from filelock import FileLock, Timeout
 from loguru import logger
 
 from clisops_core._version import __version__ as __clisops_version__
@@ -1383,55 +1384,42 @@ class Grid:
 
         # Write to disk (just horizontal coordinate variables + global attrs)
         #  if not written by another process
-        if not Path(filename).is_file():
-            LOCK = filename + ".lock"
-            lock_obj = FileLock(LOCK)
-            try:
-                lock_obj.acquire(timeout=10)
-                locked = False
-            except OSError as exc:
-                if str(exc) == f"Could not obtain file lock on {LOCK}":
-                    locked = True
-                else:
-                    locked = False
-            if locked:
-                warnings.warn(f"Could not write grid '{filename}' to cache because a lockfile of another process exists.", stacklevel=2)
-            else:
-                try:
-                    # Create a copy of the Grid object with just the horizontal grid information
-                    grid_tmp = Grid(ds=self.ds)
-                    if grid_tmp.format != grid_format:
-                        grid_tmp.reformat(grid_format)
-                    grid_tmp._drop_vars(keep_attrs=keep_attrs)
-                    grid_tmp.ds.attrs.update({"clisops": __clisops_version__})
+        lock = FileLock(f"{filename}.lock")
+        try:
+            with lock.acquire(timeout=10):
+                # Another process may have written the file while we were waiting.
+                if Path(filename).is_file():
+                    warnings.warn(
+                        f"The file '{filename}' already exists.",
+                        stacklevel=2,
+                    )
+                    return
 
-                    # Workaround for the following "features" of xarray:
-                    # 1 # "When an xarray Dataset contains non-dimensional coordinates that do not
-                    #     share dimensions with any of the variables, these coordinate variable
-                    #     names are saved under a “global” "coordinates" attribute. This is not
-                    #     CF-compliant but again facilitates round-tripping of xarray datasets."
-                    # 2 # "By default, variables with float types are attributed a _FillValue of NaN
-                    #     in the output file, unless explicitly disabled with an encoding
-                    #     {'_FillValue': None}."
-                    if grid_tmp.lat_bnds and grid_tmp.lon_bnds:
-                        grid_tmp.ds = grid_tmp.ds.reset_coords([grid_tmp.lat_bnds, grid_tmp.lon_bnds])
-                        grid_tmp.ds[grid_tmp.lat_bnds].encoding["_FillValue"] = None
-                        grid_tmp.ds[grid_tmp.lon_bnds].encoding["_FillValue"] = None
+                # Create a copy of the Grid object with just the horizontal grid information
+                grid_tmp = Grid(ds=self.ds)
+                if grid_tmp.format != grid_format:
+                    grid_tmp.reformat(grid_format)
 
-                    # Call to_netcdf method of xarray.Dataset
-                    grid_tmp.ds = fix_netcdf_attrs_encoding(grid_tmp.ds)
-                    # There is currently also an issue that xarray.Dataset.encoding['unlimited_dims']
-                    #   is not updated when dropping the time dimension from the dataset
-                    if "unlimited_dims" in grid_tmp.ds.encoding:
-                        grid_tmp.ds.encoding["unlimited_dims"] = {dim for dim in grid_tmp.ds.encoding["unlimited_dims"] if dim in grid_tmp.ds.dims}
-                    grid_tmp.ds.to_netcdf(filename, **engine_kwargs)
-                finally:
-                    lock_obj.release()
-        else:
-            # Issue a warning if the file already exists
-            #  Not raising an exception since this method is also used to save
-            #  grid files to the local cache
-            warnings.warn(f"The file '{Path(folder, filename)}' already exists.", stacklevel=2)
+                grid_tmp._drop_vars(keep_attrs=keep_attrs)
+                grid_tmp.ds.attrs.update({"clisops": __clisops_version__})
+
+                if grid_tmp.lat_bnds and grid_tmp.lon_bnds:
+                    grid_tmp.ds = grid_tmp.ds.reset_coords([grid_tmp.lat_bnds, grid_tmp.lon_bnds])
+                    grid_tmp.ds[grid_tmp.lat_bnds].encoding["_FillValue"] = None
+                    grid_tmp.ds[grid_tmp.lon_bnds].encoding["_FillValue"] = None
+
+                grid_tmp.ds = fix_netcdf_attrs_encoding(grid_tmp.ds)
+
+                if "unlimited_dims" in grid_tmp.ds.encoding:
+                    grid_tmp.ds.encoding["unlimited_dims"] = {dim for dim in grid_tmp.ds.encoding["unlimited_dims"] if dim in grid_tmp.ds.dims}
+
+                grid_tmp.ds.to_netcdf(filename, **engine_kwargs)
+
+        except Timeout:
+            warnings.warn(
+                f"Could not write grid '{filename}' to cache because another process holds the lock.",
+                stacklevel=2,
+            )
 
 
 class Weights:
@@ -1532,50 +1520,59 @@ class Weights:
         weights_dir = self.local_weights_dir
 
         # Check if bounds are present in case of conservative remapping
-        if self.method in ["conservative", "conservative_normed"] and (
+        if self.method in {"conservative", "conservative_normed"} and (
             not self.grid_in.lat_bnds or not self.grid_in.lon_bnds or not self.grid_out.lat_bnds or not self.grid_out.lon_bnds
         ):
-            raise Exception("For conservative remapping, horizontal grid bounds have to be defined for the source and target grids.")
+            raise ValueError("For conservative remapping, horizontal grid bounds have to be defined for the source and target grids.")
 
-        # Use "Locstream" functionality of xESMF as workaround for unstructured grids.
-        #  Yet, the locstream functionality only supports the nearest neighbour remapping method
-        locstream_in = False
-        locstream_out = False
-        if self.grid_in.type == "unstructured":
-            locstream_in = True
-        if self.grid_out.type == "unstructured":
-            locstream_out = True
-        if any([locstream_in, locstream_out]) and self.method != "nearest_s2d":
+        # Use "Locstream" functionality of xESMF as workaround for
+        # unstructured grids.
+        locstream_in = self.grid_in.type == "unstructured"
+        locstream_out = self.grid_out.type == "unstructured"
+
+        if (locstream_in or locstream_out) and self.method != "nearest_s2d":
             raise NotImplementedError("For unstructured grids, the only supported remapping method that is currently supported is nearest neighbour.")
 
-        # Read weights from cache (= reuse weights) if they are not currently written
-        #  to the cache by another process
-        #    Note: xESMF writes weights to disk if filename is specified and reuse_weights==False
-        #          (latter is default) else it will create a default filename and weights can
-        #          be manually written to disk with Regridder.to_netcdf(filename).
-        #          Weights are read from disk by xESMF if filename is specified and reuse_weights==True.
-        lock_obj = create_lock(Path(weights_dir, self.filename + ".lock").as_posix())
-        if not lock_obj:
-            warnings.warn(
-                f"Could not reuse cached weights '{self.filename}' because a lockfile of another process exists that is writing to that file.",
-                stacklevel=2,
-            )
-            reuse_weights = False
-            regridder_filename = None
-        else:
-            regridder_filename = Path(weights_dir, self.filename).as_posix()
-            if Path(regridder_filename).is_file():
-                reuse_weights = True
-            else:
-                reuse_weights = False
+        weights_file = Path(weights_dir, self.filename)
+        lock = FileLock(f"{weights_file}.lock")
 
         try:
-            # Read the tool & version the weights have been computed with - backup: current version
-            self.tool = self._read_info_from_cache("tool")
-            if not self.tool:
-                self.tool = f"xESMF_v{xe.__version__}"
+            with lock.acquire(timeout=10):
+                reuse_weights = weights_file.is_file()
 
-            # Call xesmf.Regridder
+                # Read the tool & version the weights have been computed with
+                # Fallback: current version.
+                self.tool = self._read_info_from_cache("tool")
+                if not self.tool:
+                    self.tool = f"xESMF_v{xe.__version__}"
+
+                self.regridder = xe.Regridder(
+                    self.grid_in.ds,
+                    self.grid_out.ds,
+                    self.method,
+                    periodic=self.periodic,
+                    locstream_in=locstream_in,
+                    locstream_out=locstream_out,
+                    ignore_degenerate=self.ignore_degenerate,
+                    unmapped_to_nan=True,
+                    filename=weights_file.as_posix(),
+                    reuse_weights=reuse_weights,
+                    post_mask_source=("domain_edge" if self.post_mask_source else None),
+                )
+
+                # Save metadata/cache information.
+                self._save_to_cache()
+
+        except Timeout:
+            warnings.warn(
+                f"Could not access cached weights '{self.filename}' because "
+                "another process is currently creating or updating them. "
+                "Computing weights without using the cache.",
+                stacklevel=2,
+            )
+
+            self.tool = f"xESMF_v{xe.__version__}"
+
             self.regridder = xe.Regridder(
                 self.grid_in.ds,
                 self.grid_out.ds,
@@ -1585,19 +1582,13 @@ class Weights:
                 locstream_out=locstream_out,
                 ignore_degenerate=self.ignore_degenerate,
                 unmapped_to_nan=True,
-                filename=regridder_filename,
-                reuse_weights=reuse_weights,
-                post_mask_source="domain_edge" if self.post_mask_source else None,
+                filename=None,
+                reuse_weights=False,
+                post_mask_source=("domain_edge" if self.post_mask_source else None),
             )
 
-            # Save Weights to cache
-            self._save_to_cache(lock_obj)
-        finally:
-            # Release file lock
-            if lock_obj:
-                lock_obj.release()
-
-        # The default filename is important for later use, so it needs to be reset.
+        # The default filename is important for later use, so it needs
+        # to be reset.
         self.regridder.filename = self.regridder._get_default_filename()
 
     def _generate_id(self) -> str:
