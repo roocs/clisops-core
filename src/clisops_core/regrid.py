@@ -16,7 +16,7 @@ from loguru import logger
 
 from clisops_core._version import __version__ as __clisops_version__
 from clisops_core.utils import _dataset_utils as clidu
-from clisops_core.utils._output_utils import FileLock, create_lock, fix_netcdf_attrs_encoding
+from clisops_core.utils._output_utils import fix_netcdf_attrs_encoding
 from clisops_core.utils.common import require_xarray, require_xesmf, xe
 
 
@@ -1343,10 +1343,10 @@ class Grid:
     def to_netcdf(
         self,
         folder: str | Path = "./",
-        filename: str | None = "",
-        grid_format: str | None = "CF",
+        filename: str | None = None,
+        grid_format: str = "CF",
         engine: str | None = None,
-        keep_attrs: bool | None = True,
+        keep_attrs: bool = True,
     ):
         """
         Store a copy of the horizontal Grid as netCDF file on disk.
@@ -1356,7 +1356,7 @@ class Grid:
 
         Parameters
         ----------
-        folder : str or Path, optional
+        folder : str or Path
             Output folder. The default is the current working directory "./".
         filename : str, optional
             Output filename, to be defined separately from folder. The default is 'grid_<grid.id>.nc'.
@@ -1369,9 +1369,9 @@ class Grid:
             Whether to store the global attributes in the output netCDF file. The default is True.
         """
         # Check inputs
-        if filename:
+        if isinstance(filename, (str | Path)):
             if "/" in str(filename):
-                raise Exception("Target directory and filename have to be passed separately.")
+                raise ValueError("Target directory and filename have to be passed separately.")
             filename = Path(folder, filename).as_posix()
         else:
             filename = Path(folder, f"grid_{self.hash}.nc").as_posix()
@@ -1776,7 +1776,7 @@ def regrid(
     grid_in: Grid,
     grid_out: Grid,
     weights: Weights,
-    adaptive_masking_threshold: float | None = 0.5,
+    adaptive_masking_threshold: float = 0.5,
     keep_attrs: bool | str = True,
 ) -> xr.Dataset:
     """
@@ -1790,7 +1790,7 @@ def regrid(
         The Grid object of the target grid.
     weights : Weights
         The Weights object, as created by using grid_in and grid_out Grid objects as input.
-    adaptive_masking_threshold : float, optional
+    adaptive_masking_threshold : float
         (AMT) A value within the [0., 1.] interval that defines the maximum `RATIO` of missing_values amongst the total
         number of data values contributing to the calculation of the target grid cell value. For a fraction [0., AMT[
         of the contributing source data missing, the target grid cell will be set to missing_value, else, it will be

@@ -17,7 +17,7 @@ allowlist_externals = ["make"]
 
 [env.extras]
 description = "Run tests with extras under {basepython}"
-extras = ["extras"]
+extras = ["performance", "regrid"]
 
 [env.lint]
 description = "Run code quality compliance tests under {basepython}"
