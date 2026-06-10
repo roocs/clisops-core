@@ -1,4 +1,4 @@
-"""A Python package for peforming core subsetting and spatial operations in clisops"""
+"""A Python package for performing core subsetting and spatial operations in clisops."""
 
 ###################################################################################
 # BSD 3-Clause License
@@ -32,6 +32,33 @@
 # OF THE POSSIBILITY OF SUCH DAMAGE.
 ###################################################################################
 
-__author__ = """Trevor James Smith"""
-__email__ = "smith.trevorj@ouranos.ca"
-__version__ = "0.1.0"
+import warnings
+
+from loguru import logger
+
+from clisops_core._version import __version__ as __version__
+from clisops_core.subset import (
+    create_mask,
+    subset_bbox,
+    subset_gridpoint,
+    subset_level,
+    subset_level_by_values,
+    subset_shape,
+    subset_time,
+    subset_time_by_components,
+    subset_time_by_values,
+)
+
+
+def showwarning(message, *args, **kwargs):  # numpydoc ignore=PR01
+    """Inject warnings from `warnings.warn` into `loguru`."""
+    logger.warning(message)
+    showwarning_(message, *args, **kwargs)
+
+
+showwarning_ = warnings.showwarning
+warnings.showwarning = showwarning
+
+# Disable logging for clisops_core and remove the logger that is instantiated on import
+logger.disable("clisops_core")
+logger.remove()

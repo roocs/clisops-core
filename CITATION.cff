@@ -18,6 +18,6 @@ contact:
     email: 'smith.trevorj@ouranos.ca'
     orcid: "https://orcid.org/0000-0001-5393-8359"
 repository-code: "https://github.com/roocs/clisops-core"
-abstract: "A Python package for peforming core subsetting and spatial operations in clisops"
+abstract: "A Python package for performing core subsetting and spatial operations in clisops."
 license: "BSD-3-Clause"
 version: "0.1.0"

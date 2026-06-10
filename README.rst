@@ -14,7 +14,7 @@ clisops-core
 | Development Status         | |status| |build| |coveralls|                        |
 +----------------------------+-----------------------------------------------------+
 
-A Python package for peforming core subsetting and spatial operations in clisops
+A Python package for performing core subsetting and spatial operations in clisops.
 
 * Free software: BSD license
 * Documentation: https://clisops-core.readthedocs.io.

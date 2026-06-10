@@ -4,8 +4,6 @@
 import pathlib
 from importlib.util import find_spec
 
-from clisops_core import clisops_core  # noqa: F401
-
 
 # import pytest
 
@@ -33,7 +31,7 @@ def test_package_metadata():
     assert project.submodule_search_locations is not None
     location = project.submodule_search_locations[0]
 
-    metadata = pathlib.Path(location).resolve().joinpath("__init__.py")
+    metadata = pathlib.Path(location).resolve().joinpath("_version.py")
 
     with metadata.open() as f:
         contents = f.read()
